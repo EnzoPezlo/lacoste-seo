@@ -1,1 +1,107 @@
-// LLM abstraction — implemented in Task 4
+import { config } from './config.js';
+
+export type LLMTask = 'classify' | 'analyze_gap' | 'analyze_movement';
+
+interface CallLLMOptions {
+  task: LLMTask;
+  prompt: string;
+  systemPrompt?: string;
+  temperature?: number;
+  maxTokens?: number;
+}
+
+interface OpenAICompatibleResponse {
+  choices: Array<{ message: { content: string } }>;
+}
+
+async function callOllama(options: CallLLMOptions): Promise<string> {
+  const { ollamaUrl, ollamaModel } = config.llm;
+  if (!ollamaUrl) throw new Error('OLLAMA_URL not configured');
+
+  const messages = [];
+  if (options.systemPrompt) {
+    messages.push({ role: 'system' as const, content: options.systemPrompt });
+  }
+  messages.push({ role: 'user' as const, content: options.prompt });
+
+  const response = await fetch(`${ollamaUrl}/v1/chat/completions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: ollamaModel,
+      messages,
+      temperature: options.temperature ?? 0.1,
+      max_tokens: options.maxTokens ?? 4000,
+    }),
+    signal: AbortSignal.timeout(120_000), // 2 min timeout
+  });
+
+  if (!response.ok) {
+    throw new Error(`Ollama error: ${response.status} ${response.statusText}`);
+  }
+
+  const data = (await response.json()) as OpenAICompatibleResponse;
+  return data.choices[0].message.content;
+}
+
+async function callCloudLLM(options: CallLLMOptions): Promise<string> {
+  const { fallbackProvider, fallbackApiKey, fallbackModel } = config.llm;
+  if (!fallbackApiKey) throw new Error('LLM_FALLBACK_API_KEY not configured');
+
+  // Only OpenAI-compatible providers are supported via this unified path.
+  // Anthropic uses a different API format and is NOT supported as a fallback.
+  const baseUrls: Record<string, string> = {
+    openai: 'https://api.openai.com/v1',
+    mistral: 'https://api.mistral.ai/v1',
+  };
+
+  const baseUrl = baseUrls[fallbackProvider];
+  if (!baseUrl) {
+    throw new Error(`Unsupported LLM fallback provider: ${fallbackProvider}. Use "openai" or "mistral".`);
+  }
+
+  const messages = [];
+  if (options.systemPrompt) {
+    messages.push({ role: 'system' as const, content: options.systemPrompt });
+  }
+  messages.push({ role: 'user' as const, content: options.prompt });
+
+  const response = await fetch(`${baseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${fallbackApiKey}`,
+    },
+    body: JSON.stringify({
+      model: fallbackModel,
+      messages,
+      temperature: options.temperature ?? 0.1,
+      max_tokens: options.maxTokens ?? 4000,
+    }),
+    signal: AbortSignal.timeout(120_000),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Cloud LLM error: ${response.status} — ${body}`);
+  }
+
+  const data = (await response.json()) as OpenAICompatibleResponse;
+  return data.choices[0].message.content;
+}
+
+export async function callLLM(options: CallLLMOptions): Promise<string> {
+  // Try Ollama first
+  if (config.llm.ollamaUrl) {
+    try {
+      return await callOllama(options);
+    } catch (error) {
+      console.warn(
+        `[llm] Ollama failed for task "${options.task}": ${(error as Error).message}. Falling back to cloud.`,
+      );
+    }
+  }
+
+  // Fallback to cloud
+  return callCloudLLM(options);
+}
