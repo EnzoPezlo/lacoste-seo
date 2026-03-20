@@ -1,0 +1,42 @@
+name: SEO Pipeline
+
+on:
+  schedule:
+    - cron: '0 6 1 * *'  # 1st of every month at 6:00 UTC
+  workflow_dispatch:
+    inputs:
+      run_type:
+        description: 'Run type'
+        type: choice
+        options:
+          - manual
+          - auto
+        default: manual
+
+jobs:
+  pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Run SEO pipeline
+        run: npx tsx pipeline/run.ts
+        env:
+          RUN_TYPE: ${{ github.event.inputs.run_type || 'auto' }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          GOOGLE_CSE_KEY: ${{ secrets.GOOGLE_CSE_KEY }}
+          GOOGLE_CSE_CX: ${{ secrets.GOOGLE_CSE_CX }}
+          FIRECRAWL_KEY: ${{ secrets.FIRECRAWL_KEY }}
+          OLLAMA_URL: ${{ secrets.OLLAMA_URL }}
+          LLM_FALLBACK_PROVIDER: ${{ vars.LLM_FALLBACK_PROVIDER }}
+          LLM_FALLBACK_API_KEY: ${{ secrets.LLM_FALLBACK_API_KEY }}
