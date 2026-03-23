@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { triggerRun } from '../lib/api';
 import { RunDetail } from '../components/RunDetail';
+import { toast } from 'sonner';
+import { Play, Clock, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
 
 interface Run {
   id: string;
@@ -10,6 +12,31 @@ interface Run {
   status: string;
   started_at: string;
   finished_at: string | null;
+}
+
+const statusConfig: Record<string, { label: string; color: string; border: string; icon: typeof CheckCircle2 }> = {
+  pending: { label: 'Pending', color: 'bg-amber-50 text-amber-700', border: 'border-l-amber-400', icon: Clock },
+  serp_done: { label: 'SERP done', color: 'bg-sky-50 text-sky-700', border: 'border-l-sky-400', icon: Loader2 },
+  scrap_done: { label: 'Scraped', color: 'bg-sky-50 text-sky-700', border: 'border-l-sky-400', icon: Loader2 },
+  analysis_done: { label: 'Analyzed', color: 'bg-violet-50 text-violet-700', border: 'border-l-violet-400', icon: Loader2 },
+  completed: { label: 'Completed', color: 'bg-emerald-50 text-emerald-700', border: 'border-l-emerald-400', icon: CheckCircle2 },
+  failed: { label: 'Failed', color: 'bg-red-50 text-red-700', border: 'border-l-red-400', icon: AlertCircle },
+};
+
+function formatDate(iso: string) {
+  return new Date(iso).toLocaleString('fr-FR', {
+    timeZone: 'Europe/Paris',
+    dateStyle: 'short',
+    timeStyle: 'short',
+  });
+}
+
+function duration(start: string, end: string | null) {
+  if (!end) return '—';
+  const ms = new Date(end).getTime() - new Date(start).getTime();
+  const mins = Math.floor(ms / 60000);
+  const secs = Math.floor((ms % 60000) / 1000);
+  return mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
 }
 
 export function RunsPage() {
@@ -24,7 +51,6 @@ export function RunsPage() {
       .order('started_at', { ascending: false })
       .then(({ data }) => setRuns(data || []));
 
-    // Realtime subscription for run status updates
     const channel = supabase
       .channel('runs-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'runs' }, (payload) => {
@@ -44,58 +70,89 @@ export function RunsPage() {
     setTriggering(true);
     try {
       await triggerRun();
-      alert('Run triggered! It will appear in the list shortly.');
+      toast.success('Pipeline triggered — it will appear in the list shortly.');
     } catch (e) {
-      alert(`Error: ${(e as Error).message}`);
+      toast.error(`Failed to trigger: ${(e as Error).message}`);
     } finally {
       setTriggering(false);
     }
   };
 
-  const statusColors: Record<string, string> = {
-    pending: 'bg-yellow-100 text-yellow-800',
-    serp_done: 'bg-blue-100 text-blue-800',
-    scrap_done: 'bg-blue-100 text-blue-800',
-    analysis_done: 'bg-blue-100 text-blue-800',
-    completed: 'bg-green-100 text-green-800',
-  };
+  const completedRuns = runs.filter((r) => r.status === 'completed').length;
+  const inProgressRuns = runs.filter((r) => !['completed', 'failed'].includes(r.status)).length;
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-xl font-semibold">Runs</h1>
+      {/* Header */}
+      <div className="flex items-center justify-between mb-8">
+        <div>
+          <h1 className="text-2xl font-bold text-zinc-900">Pipeline Runs</h1>
+          <p className="text-sm text-zinc-500 mt-1">Monitor and manage SEO pipeline executions</p>
+        </div>
         <button
           onClick={handleTrigger}
           disabled={triggering}
-          className="px-4 py-2 bg-gray-900 text-white text-sm rounded hover:bg-gray-700 disabled:opacity-50"
+          className="inline-flex items-center gap-2 px-5 py-2.5 bg-brand text-white text-sm font-medium rounded-lg hover:bg-brand-hover disabled:opacity-50 transition-colors shadow-sm"
         >
+          {triggering ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
           {triggering ? 'Launching...' : 'Launch a run'}
         </button>
       </div>
 
+      {/* KPI cards */}
+      <div className="grid grid-cols-3 gap-4 mb-8">
+        <div className="bg-white rounded-xl border border-zinc-200 p-5">
+          <div className="text-sm text-zinc-500 font-medium">Total runs</div>
+          <div className="text-3xl font-bold text-zinc-900 mt-1">{runs.length}</div>
+        </div>
+        <div className="bg-white rounded-xl border border-zinc-200 p-5">
+          <div className="text-sm text-zinc-500 font-medium">Completed</div>
+          <div className="text-3xl font-bold text-emerald-600 mt-1">{completedRuns}</div>
+        </div>
+        <div className="bg-white rounded-xl border border-zinc-200 p-5">
+          <div className="text-sm text-zinc-500 font-medium">In progress</div>
+          <div className="text-3xl font-bold text-sky-600 mt-1">{inProgressRuns}</div>
+        </div>
+      </div>
+
+      {/* Run list + Detail */}
       <div className="grid grid-cols-3 gap-6">
         <div className="col-span-1 space-y-2">
-          {runs.map((run) => (
-            <button
-              key={run.id}
-              onClick={() => setSelectedRunId(run.id)}
-              className={`w-full text-left p-3 rounded border ${
-                selectedRunId === run.id ? 'border-gray-900 bg-white' : 'border-gray-200 bg-white hover:border-gray-300'
-              }`}
-            >
-              <div className="font-medium text-sm">{run.run_label}</div>
-              <div className="flex items-center gap-2 mt-1">
-                <span className={`text-xs px-2 py-0.5 rounded-full ${statusColors[run.status] || 'bg-gray-100'}`}>
-                  {run.status}
-                </span>
-                <span className="text-xs text-gray-400">
-                  {new Date(run.started_at).toLocaleString('fr-FR', { timeZone: 'Europe/Paris', dateStyle: 'short', timeStyle: 'short' })}
-                </span>
-              </div>
-            </button>
-          ))}
+          {runs.map((run) => {
+            const cfg = statusConfig[run.status] || statusConfig.pending;
+            const StatusIcon = cfg.icon;
+            return (
+              <button
+                key={run.id}
+                onClick={() => setSelectedRunId(run.id)}
+                className={`w-full text-left p-4 rounded-xl border-l-4 bg-white border border-zinc-200 transition-all ${cfg.border} ${
+                  selectedRunId === run.id
+                    ? 'ring-2 ring-brand/30 border-zinc-300'
+                    : 'hover:border-zinc-300 hover:shadow-sm'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold text-sm text-zinc-900">{run.run_label}</span>
+                  <span className="text-xs text-zinc-400 uppercase">{run.type}</span>
+                </div>
+                <div className="flex items-center gap-2 mt-2">
+                  <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium ${cfg.color}`}>
+                    <StatusIcon size={12} />
+                    {cfg.label}
+                  </span>
+                  <span className="text-xs text-zinc-400">{formatDate(run.started_at)}</span>
+                  {run.finished_at && (
+                    <span className="text-xs text-zinc-400 ml-auto">{duration(run.started_at, run.finished_at)}</span>
+                  )}
+                </div>
+              </button>
+            );
+          })}
           {runs.length === 0 && (
-            <p className="text-gray-400 text-sm">No runs yet. Launch your first run!</p>
+            <div className="text-center py-12">
+              <Play size={32} className="mx-auto text-zinc-300 mb-3" />
+              <p className="text-zinc-400 text-sm">No runs yet. Launch your first run!</p>
+            </div>
           )}
         </div>
 
@@ -103,7 +160,10 @@ export function RunsPage() {
           {selectedRunId ? (
             <RunDetail runId={selectedRunId} />
           ) : (
-            <p className="text-gray-400 text-sm">Select a run to see details.</p>
+            <div className="bg-white rounded-xl border border-zinc-200 p-12 text-center">
+              <Clock size={32} className="mx-auto text-zinc-300 mb-3" />
+              <p className="text-zinc-400 text-sm">Select a run to see its details and logs.</p>
+            </div>
           )}
         </div>
       </div>
