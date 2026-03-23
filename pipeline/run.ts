@@ -15,14 +15,6 @@ async function updateRunStatus(runId: string, status: string): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  // Debug: log key env vars to diagnose OLLAMA_MODEL issue
-  const model = process.env.OLLAMA_MODEL || '';
-  const url = process.env.OLLAMA_URL || '';
-  const pass = process.env.OLLAMA_PASSWORD || '';
-  console.log(`[env] OLLAMA_MODEL length=${model.length} chars=[${model.split('').join(',')}]`);
-  console.log(`[env] OLLAMA_URL length=${url.length} last5="${url.slice(-5)}"`);
-  console.log(`[env] OLLAMA_PASSWORD length=${pass.length}`);
-
   const runType = process.env.RUN_TYPE || 'manual';
   const resumeRunId = process.env.RESUME_RUN_ID;
 
@@ -77,8 +69,8 @@ async function main(): Promise<void> {
     // Step 4: Analyze Lacoste gaps
     await analyzeGap(runId);
 
-    // Step 5: Analyze movements
-    await analyzeMovement(runId);
+    // Step 5: Analyze movements (disabled — needs multi-run history)
+    // await analyzeMovement(runId);
     await updateRunStatus(runId, 'analysis_done');
 
     // Done
