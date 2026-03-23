@@ -63,8 +63,18 @@ async function main(): Promise<void> {
       await updateRunStatus(runId, 'scrap_done');
     }
 
-    // Step 3: Classify actors
-    await classify(runId);
+    // Step 3: Classify actors — skip if already done for this run
+    const { count: classifiedCount } = await supabase
+      .from('serp_results')
+      .select('*', { count: 'exact', head: true })
+      .eq('run_id', runId)
+      .not('actor_name', 'is', null);
+
+    if (classifiedCount && classifiedCount > 0) {
+      console.log(`⏭️  Classification already done (${classifiedCount} results classified), skipping`);
+    } else {
+      await classify(runId);
+    }
 
     // Step 4: Analyze Lacoste gaps
     await analyzeGap(runId);
