@@ -33,9 +33,10 @@ async function callOllama(options: CallLLMOptions): Promise<string> {
     headers['Authorization'] = `Basic ${btoa(`${ollamaUser}:${ollamaPassword}`)}`;
   }
 
-  console.log(`[llm] Calling Ollama model="${ollamaModel}" at ${ollamaUrl}/api/chat`);
+  const fullUrl = `${ollamaUrl}/api/chat`;
+  console.log(`[llm] Calling Ollama model="${ollamaModel}" url_length=${fullUrl.length}`);
 
-  const response = await fetch(`${ollamaUrl}/api/chat`, {
+  const response = await fetch(fullUrl, {
     method: 'POST',
     headers,
     body: JSON.stringify({
@@ -51,7 +52,8 @@ async function callOllama(options: CallLLMOptions): Promise<string> {
   });
 
   if (!response.ok) {
-    throw new Error(`Ollama error: ${response.status} ${response.statusText}`);
+    const body = await response.text().catch(() => '');
+    throw new Error(`Ollama error: ${response.status} ${response.statusText} — ${body.slice(0, 200)}`);
   }
 
   const data = (await response.json()) as OllamaChatResponse;
