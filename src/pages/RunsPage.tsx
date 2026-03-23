@@ -89,7 +89,7 @@ export function RunsPage() {
                   {run.status}
                 </span>
                 <span className="text-xs text-gray-400">
-                  {new Date(run.started_at).toLocaleDateString()}
+                  {new Date(run.started_at).toLocaleString('fr-FR', { timeZone: 'Europe/Paris', dateStyle: 'short', timeStyle: 'short' })}
                 </span>
               </div>
             </button>

@@ -71,7 +71,7 @@ export function RunDetail({ runId }: { runId: string }) {
             <div className="ml-8 mt-1 space-y-1">
               {stepLogs.map((l) => (
                 <div key={l.id} className={`text-xs py-1 ${l.status === 'error' ? 'text-red-600' : 'text-gray-600'}`}>
-                  <span className="text-gray-400">{new Date(l.created_at).toLocaleTimeString()}</span>
+                  <span className="text-gray-400">{new Date(l.created_at).toLocaleTimeString('fr-FR', { timeZone: 'Europe/Paris' })}</span>
                   {' '}{l.message}
                 </div>
               ))}
