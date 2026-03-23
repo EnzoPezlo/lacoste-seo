@@ -65,8 +65,8 @@ export async function analyzeGap(runId: string): Promise<void> {
 
   for (const [category, items] of byCategory) {
     // Process in batches of 2-3
-    for (let i = 0; i < items.length; i += 2) {
-      const batch = items.slice(i, i + 2);
+    for (let i = 0; i < items.length; i += 1) {
+      const batch = items.slice(i, i + 1);
 
       try {
         // Build aggregated content for the batch
@@ -158,12 +158,14 @@ export async function analyzeGap(runId: string): Promise<void> {
           `Analyzed ${analyzed}/${toAnalyze.length} combinations`,
         );
       } catch (error) {
+        const errMsg = (error as Error).message;
+        console.error(`[analyze_gap] Error in "${category}":`, errMsg.slice(0, 300));
         await log(
           runId,
           'analyze_gap',
           'error',
           `Failed batch in category "${category}"`,
-          { error: (error as Error).message },
+          { error: errMsg },
         );
       }
     }
