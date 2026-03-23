@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase';
 import { triggerRun } from '../lib/api';
 import { RunDetail } from '../components/RunDetail';
 import { toast } from 'sonner';
-import { Play, Clock, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
+import { Play, Clock, CheckCircle2, AlertCircle, Loader2, Copy } from 'lucide-react';
 
 interface Run {
   id: string;
@@ -134,6 +134,20 @@ export function RunsPage() {
                 <div className="flex items-center justify-between">
                   <span className="font-semibold text-sm text-zinc-900">{run.run_label}</span>
                   <span className="text-xs text-zinc-400 uppercase">{run.type}</span>
+                </div>
+                <div className="flex items-center gap-1 mt-1">
+                  <code className="text-[10px] text-zinc-400 font-mono truncate">{run.id}</code>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      navigator.clipboard.writeText(run.id);
+                      toast.success('Run ID copied');
+                    }}
+                    className="text-zinc-300 hover:text-zinc-500 transition-colors shrink-0"
+                    title="Copy run ID"
+                  >
+                    <Copy size={10} />
+                  </button>
                 </div>
                 <div className="flex items-center gap-2 mt-2">
                   <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium ${cfg.color}`}>
