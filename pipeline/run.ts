@@ -15,6 +15,10 @@ async function updateRunStatus(runId: string, status: string): Promise<void> {
 }
 
 async function main(): Promise<void> {
+  // Debug: log key env vars to diagnose OLLAMA_MODEL issue
+  console.log('[env] OLLAMA_MODEL raw:', JSON.stringify(process.env.OLLAMA_MODEL));
+  console.log('[env] OLLAMA_URL raw:', process.env.OLLAMA_URL ? '(set)' : '(empty)');
+
   const runType = process.env.RUN_TYPE || 'manual';
   const resumeRunId = process.env.RESUME_RUN_ID;
 

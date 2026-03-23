@@ -33,6 +33,8 @@ async function callOllama(options: CallLLMOptions): Promise<string> {
     headers['Authorization'] = `Basic ${btoa(`${ollamaUser}:${ollamaPassword}`)}`;
   }
 
+  console.log(`[llm] Calling Ollama model="${ollamaModel}" at ${ollamaUrl}/api/chat`);
+
   const response = await fetch(`${ollamaUrl}/api/chat`, {
     method: 'POST',
     headers,
