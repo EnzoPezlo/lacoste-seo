@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
-import { Search, Globe, Monitor, Smartphone, ChevronDown } from 'lucide-react';
+import { Search, Monitor, Smartphone, ChevronDown } from 'lucide-react';
 
 interface SerpResult {
   id: string;
