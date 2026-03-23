@@ -22,6 +22,8 @@ export const config = {
   },
   llm: {
     ollamaUrl: optionalEnv('OLLAMA_URL'),
+    ollamaUser: optionalEnv('OLLAMA_USER'),
+    ollamaPassword: optionalEnv('OLLAMA_PASSWORD'),
     fallbackProvider: optionalEnv('LLM_FALLBACK_PROVIDER', 'openai'),
     fallbackApiKey: optionalEnv('LLM_FALLBACK_API_KEY'),
     ollamaModel: optionalEnv('OLLAMA_MODEL', 'mistral-small:14b'),

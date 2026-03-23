@@ -38,5 +38,7 @@ jobs:
           GOOGLE_CSE_CX: ${{ secrets.GOOGLE_CSE_CX }}
           FIRECRAWL_KEY: ${{ secrets.FIRECRAWL_KEY }}
           OLLAMA_URL: ${{ secrets.OLLAMA_URL }}
+          OLLAMA_USER: ${{ secrets.OLLAMA_USER }}
+          OLLAMA_PASSWORD: ${{ secrets.OLLAMA_PASSWORD }}
           LLM_FALLBACK_PROVIDER: ${{ vars.LLM_FALLBACK_PROVIDER }}
           LLM_FALLBACK_API_KEY: ${{ secrets.LLM_FALLBACK_API_KEY }}

@@ -14,8 +14,12 @@ interface OpenAICompatibleResponse {
   choices: Array<{ message: { content: string } }>;
 }
 
+interface OllamaChatResponse {
+  message: { role: string; content: string };
+}
+
 async function callOllama(options: CallLLMOptions): Promise<string> {
-  const { ollamaUrl, ollamaModel } = config.llm;
+  const { ollamaUrl, ollamaModel, ollamaUser, ollamaPassword } = config.llm;
   if (!ollamaUrl) throw new Error('OLLAMA_URL not configured');
 
   const messages = [];
@@ -24,14 +28,22 @@ async function callOllama(options: CallLLMOptions): Promise<string> {
   }
   messages.push({ role: 'user' as const, content: options.prompt });
 
-  const response = await fetch(`${ollamaUrl}/v1/chat/completions`, {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (ollamaUser && ollamaPassword) {
+    headers['Authorization'] = `Basic ${btoa(`${ollamaUser}:${ollamaPassword}`)}`;
+  }
+
+  const response = await fetch(`${ollamaUrl}/api/chat`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify({
       model: ollamaModel,
       messages,
-      temperature: options.temperature ?? 0.1,
-      max_tokens: options.maxTokens ?? 4000,
+      stream: false,
+      options: {
+        temperature: options.temperature ?? 0.1,
+        num_predict: options.maxTokens ?? 4000,
+      },
     }),
     signal: AbortSignal.timeout(120_000), // 2 min timeout
   });
@@ -40,8 +52,8 @@ async function callOllama(options: CallLLMOptions): Promise<string> {
     throw new Error(`Ollama error: ${response.status} ${response.statusText}`);
   }
 
-  const data = (await response.json()) as OpenAICompatibleResponse;
-  return data.choices[0].message.content;
+  const data = (await response.json()) as OllamaChatResponse;
+  return data.message.content;
 }
 
 async function callCloudLLM(options: CallLLMOptions): Promise<string> {
