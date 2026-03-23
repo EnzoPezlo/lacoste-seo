@@ -109,8 +109,12 @@ export async function callLLM(options: CallLLMOptions): Promise<string> {
       return await callOllama(options);
     } catch (error) {
       console.warn(
-        `[llm] Ollama failed for task "${options.task}": ${(error as Error).message}. Falling back to cloud.`,
+        `[llm] Ollama failed for task "${options.task}": ${(error as Error).message}.`,
       );
+      if (!config.llm.fallbackApiKey) {
+        throw new Error(`Ollama failed and no fallback LLM configured: ${(error as Error).message}`);
+      }
+      console.warn('[llm] Falling back to cloud.');
     }
   }
 
