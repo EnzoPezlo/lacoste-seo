@@ -2,6 +2,7 @@ import { supabase } from './lib/supabase.js';
 import { log } from './lib/logger.js';
 import { callLLM } from './lib/llm.js';
 import { ANALYZE_GAP_SYSTEM, analyzeGapUserPrompt } from './prompts/analyze-gap.js';
+import { jsonrepair } from 'jsonrepair';
 
 interface GapAnalysisResult {
   keyword: string;
@@ -117,22 +118,15 @@ export async function analyzeGap(runId: string): Promise<void> {
           prompt,
           systemPrompt: ANALYZE_GAP_SYSTEM,
           temperature: 0.2,
-          maxTokens: 4000,
+          maxTokens: 8000,
         });
 
-        // Parse response — sanitize control characters that small LLMs emit inside JSON strings
+        // Parse response — use jsonrepair to fix malformed JSON from small LLMs
         let jsonStr = response.trim();
         if (jsonStr.startsWith('```')) {
           jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
         }
-        // Escape control chars only inside JSON string values (not structural whitespace)
-        jsonStr = jsonStr.replace(/"(?:[^"\\]|\\.)*"/g, (match) =>
-          match.replace(/[\x00-\x1F\x7F]/g, (ch) => {
-            const map: Record<string, string> = { '\n': '\\n', '\r': '\\r', '\t': '\\t' };
-            return map[ch] || '';
-          }),
-        );
-        const analyses: GapAnalysisResult[] = JSON.parse(jsonStr);
+        const analyses: GapAnalysisResult[] = JSON.parse(jsonrepair(jsonStr));
 
         // Store each analysis
         for (const analysis of analyses) {

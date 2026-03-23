@@ -2,6 +2,7 @@ import { supabase } from './lib/supabase.js';
 import { log } from './lib/logger.js';
 import { callLLM } from './lib/llm.js';
 import { CLASSIFY_SYSTEM, classifyUserPrompt } from './prompts/classify.js';
+import { jsonrepair } from 'jsonrepair';
 
 interface ClassificationResult {
   position: number;
@@ -62,18 +63,12 @@ export async function classify(runId: string): Promise<void> {
         maxTokens: 2000,
       });
 
-      // Parse JSON response — handle markdown code blocks + control chars
+      // Parse JSON response — use jsonrepair to fix malformed JSON from small LLMs
       let jsonStr = response.trim();
       if (jsonStr.startsWith('```')) {
         jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
       }
-      jsonStr = jsonStr.replace(/"(?:[^"\\]|\\.)*"/g, (match) =>
-        match.replace(/[\x00-\x1F\x7F]/g, (ch) => {
-          const map: Record<string, string> = { '\n': '\\n', '\r': '\\r', '\t': '\\t' };
-          return map[ch] || '';
-        }),
-      );
-      const classifications: ClassificationResult[] = JSON.parse(jsonStr);
+      const classifications: ClassificationResult[] = JSON.parse(jsonrepair(jsonStr));
 
       // Update each SERP result with classification
       for (const cls of classifications) {
