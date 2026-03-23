@@ -39,11 +39,25 @@ export async function analyzeGap(runId: string): Promise<void> {
     groups.get(key)!.push(result);
   }
 
-  // Filter: skip combinations where Lacoste is #1
+  // Get already-completed analyses for this run
+  const { data: existingAnalyses } = await supabase
+    .from('analyses')
+    .select('keyword_id, country, device')
+    .eq('run_id', runId)
+    .eq('analysis_type', 'lacoste_gap');
+
+  const doneSet = new Set(
+    (existingAnalyses || []).map((a) => `${a.keyword_id}|${a.country}|${a.device}`),
+  );
+
+  // Filter: skip combinations where Lacoste is #1 or already analyzed
   const toAnalyze: Array<{ key: string; results: typeof serpResults; keyword: any }> = [];
+  let skippedLacoste1 = 0;
+  let skippedDone = 0;
   for (const [key, results] of groups) {
     const lacostePosResult = results.find((r) => r.is_lacoste);
-    if (lacostePosResult && lacostePosResult.position === 1) continue; // Skip: Lacoste is #1
+    if (lacostePosResult && lacostePosResult.position === 1) { skippedLacoste1++; continue; }
+    if (doneSet.has(key)) { skippedDone++; continue; }
     toAnalyze.push({ key, results, keyword: (results[0] as any).keywords });
   }
 
@@ -51,7 +65,7 @@ export async function analyzeGap(runId: string): Promise<void> {
     runId,
     'analyze_gap',
     'running',
-    `${toAnalyze.length} combinations to analyze (${groups.size - toAnalyze.length} skipped — Lacoste #1)`,
+    `${toAnalyze.length} combinations to analyze (${skippedLacoste1} skipped — Lacoste #1, ${skippedDone} already done)`,
   );
 
   // Batch by category (2-3 keywords per batch)
