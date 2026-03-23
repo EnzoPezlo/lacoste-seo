@@ -12,6 +12,9 @@ on:
           - manual
           - auto
         default: manual
+      resume_run_id:
+        description: 'Resume from existing run ID (skips SERP + scrape)'
+        required: false
 
 jobs:
   pipeline:
@@ -32,6 +35,7 @@ jobs:
         run: npx tsx pipeline/run.ts
         env:
           RUN_TYPE: ${{ github.event.inputs.run_type || 'auto' }}
+          RESUME_RUN_ID: ${{ github.event.inputs.resume_run_id }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           GOOGLE_CSE_KEY: ${{ secrets.GOOGLE_CSE_KEY }}

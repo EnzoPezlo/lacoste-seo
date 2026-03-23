@@ -16,40 +16,52 @@ async function updateRunStatus(runId: string, status: string): Promise<void> {
 
 async function main(): Promise<void> {
   const runType = process.env.RUN_TYPE || 'manual';
-  const now = new Date();
-  const today = now.toISOString().slice(0, 10);
-  const time = now.toISOString().slice(11, 16).replace(':', 'h'); // e.g. "06h30"
-  const runLabel = `${today}_${runType}_${time}`; // e.g. "2026-04-01_manual_14h30"
+  const resumeRunId = process.env.RESUME_RUN_ID;
 
-  console.log(`\n🚀 Starting SEO pipeline run: ${runLabel}\n`);
+  let runId: string;
 
-  // Create the run
-  const { data: run, error } = await supabase
-    .from('runs')
-    .insert({
-      run_label: runLabel,
-      type: runType,
-      status: 'pending',
-    })
-    .select('id')
-    .single();
+  if (resumeRunId) {
+    // Resume an existing run from classification step
+    runId = resumeRunId;
+    console.log(`\n🔄 Resuming pipeline run: ${runId} (skipping SERP + scrape)\n`);
+  } else {
+    // Create a new run
+    const now = new Date();
+    const today = now.toISOString().slice(0, 10);
+    const time = now.toISOString().slice(11, 16).replace(':', 'h');
+    const runLabel = `${today}_${runType}_${time}`;
 
-  if (error || !run) {
-    console.error('Failed to create run:', error?.message);
-    process.exit(1);
+    console.log(`\n🚀 Starting SEO pipeline run: ${runLabel}\n`);
+
+    const { data: run, error } = await supabase
+      .from('runs')
+      .insert({
+        run_label: runLabel,
+        type: runType,
+        status: 'pending',
+      })
+      .select('id')
+      .single();
+
+    if (error || !run) {
+      console.error('Failed to create run:', error?.message);
+      process.exit(1);
+    }
+
+    runId = run.id;
+    console.log(`Run created: ${runId}\n`);
   }
 
-  const runId = run.id;
-  console.log(`Run created: ${runId}\n`);
-
   try {
-    // Step 1: Collect SERP
-    await collectSerp(runId);
-    await updateRunStatus(runId, 'serp_done');
+    if (!resumeRunId) {
+      // Step 1: Collect SERP
+      await collectSerp(runId);
+      await updateRunStatus(runId, 'serp_done');
 
-    // Step 2: Scrape pages
-    await scrape(runId);
-    await updateRunStatus(runId, 'scrap_done');
+      // Step 2: Scrape pages
+      await scrape(runId);
+      await updateRunStatus(runId, 'scrap_done');
+    }
 
     // Step 3: Classify actors
     await classify(runId);
@@ -63,10 +75,9 @@ async function main(): Promise<void> {
 
     // Done
     await updateRunStatus(runId, 'completed');
-    console.log(`\n✅ Pipeline completed: ${runLabel}\n`);
+    console.log(`\n✅ Pipeline completed: ${runId}\n`);
   } catch (error) {
     console.error(`\n❌ Pipeline failed:`, (error as Error).message);
-    // Update run status to reflect failure — finished_at is set for duration tracking
     await supabase.from('runs').update({
       finished_at: new Date().toISOString(),
     }).eq('id', runId);
