@@ -26,7 +26,7 @@ export const config = {
     ollamaPassword: optionalEnv('OLLAMA_PASSWORD'),
     fallbackProvider: optionalEnv('LLM_FALLBACK_PROVIDER', 'openai'),
     fallbackApiKey: optionalEnv('LLM_FALLBACK_API_KEY'),
-    ollamaModel: optionalEnv('OLLAMA_MODEL', 'mistral-small:14b'),
+    ollamaModel: optionalEnv('OLLAMA_MODEL', 'ministral-3:14b'),
     fallbackModel: optionalEnv('LLM_FALLBACK_MODEL', 'gpt-4.1-mini'),
   },
 } as const;
