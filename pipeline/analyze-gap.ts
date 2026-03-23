@@ -99,10 +99,10 @@ export async function analyzeGap(runId: string): Promise<void> {
             aggregatedContent += `--- ${label} ---\n`;
             if (snapshot) {
               // Truncate markdown to ~3000 chars per page to fit context
-              const md = snapshot.markdown_content?.slice(0, 3000) || '(no content)';
-              aggregatedContent += `META HEAD: ${snapshot.head_html?.slice(0, 500) || '(no head)'}\n`;
+              const md = snapshot.markdown_content?.slice(0, 1500) || '(no content)';
+              aggregatedContent += `META HEAD: ${snapshot.head_html?.slice(0, 300) || '(no head)'}\n`;
               if (snapshot.structured_data) {
-                aggregatedContent += `STRUCTURED DATA: ${JSON.stringify(snapshot.structured_data).slice(0, 500)}\n`;
+                aggregatedContent += `STRUCTURED DATA: ${JSON.stringify(snapshot.structured_data).slice(0, 300)}\n`;
               }
               aggregatedContent += `CONTENU MARKDOWN:\n${md}\n\n`;
             } else {

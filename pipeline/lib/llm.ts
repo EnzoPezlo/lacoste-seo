@@ -45,7 +45,7 @@ async function callOllama(options: CallLLMOptions): Promise<string> {
         num_predict: options.maxTokens ?? 4000,
       },
     }),
-    signal: AbortSignal.timeout(120_000), // 2 min timeout
+    signal: AbortSignal.timeout(300_000), // 5 min timeout
   });
 
   if (!response.ok) {
