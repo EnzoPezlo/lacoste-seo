@@ -120,11 +120,16 @@ export async function analyzeGap(runId: string): Promise<void> {
           maxTokens: 4000,
         });
 
-        // Parse response
+        // Parse response — sanitize control characters that small LLMs emit inside JSON strings
         let jsonStr = response.trim();
         if (jsonStr.startsWith('```')) {
           jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
         }
+        // Replace unescaped control chars inside JSON string values (tabs, newlines, etc.)
+        jsonStr = jsonStr.replace(/[\x00-\x1F\x7F]/g, (ch) => {
+          const map: Record<string, string> = { '\n': '\\n', '\r': '\\r', '\t': '\\t' };
+          return map[ch] || '';
+        });
         const analyses: GapAnalysisResult[] = JSON.parse(jsonStr);
 
         // Store each analysis

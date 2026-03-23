@@ -62,11 +62,15 @@ export async function classify(runId: string): Promise<void> {
         maxTokens: 2000,
       });
 
-      // Parse JSON response — handle markdown code blocks
+      // Parse JSON response — handle markdown code blocks + control chars
       let jsonStr = response.trim();
       if (jsonStr.startsWith('```')) {
         jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
       }
+      jsonStr = jsonStr.replace(/[\x00-\x1F\x7F]/g, (ch) => {
+        const map: Record<string, string> = { '\n': '\\n', '\r': '\\r', '\t': '\\t' };
+        return map[ch] || '';
+      });
       const classifications: ClassificationResult[] = JSON.parse(jsonStr);
 
       // Update each SERP result with classification
