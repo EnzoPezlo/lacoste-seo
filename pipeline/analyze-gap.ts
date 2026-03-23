@@ -125,11 +125,13 @@ export async function analyzeGap(runId: string): Promise<void> {
         if (jsonStr.startsWith('```')) {
           jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
         }
-        // Replace unescaped control chars inside JSON string values (tabs, newlines, etc.)
-        jsonStr = jsonStr.replace(/[\x00-\x1F\x7F]/g, (ch) => {
-          const map: Record<string, string> = { '\n': '\\n', '\r': '\\r', '\t': '\\t' };
-          return map[ch] || '';
-        });
+        // Escape control chars only inside JSON string values (not structural whitespace)
+        jsonStr = jsonStr.replace(/"(?:[^"\\]|\\.)*"/g, (match) =>
+          match.replace(/[\x00-\x1F\x7F]/g, (ch) => {
+            const map: Record<string, string> = { '\n': '\\n', '\r': '\\r', '\t': '\\t' };
+            return map[ch] || '';
+          }),
+        );
         const analyses: GapAnalysisResult[] = JSON.parse(jsonStr);
 
         // Store each analysis

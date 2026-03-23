@@ -67,10 +67,12 @@ export async function classify(runId: string): Promise<void> {
       if (jsonStr.startsWith('```')) {
         jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
       }
-      jsonStr = jsonStr.replace(/[\x00-\x1F\x7F]/g, (ch) => {
-        const map: Record<string, string> = { '\n': '\\n', '\r': '\\r', '\t': '\\t' };
-        return map[ch] || '';
-      });
+      jsonStr = jsonStr.replace(/"(?:[^"\\]|\\.)*"/g, (match) =>
+        match.replace(/[\x00-\x1F\x7F]/g, (ch) => {
+          const map: Record<string, string> = { '\n': '\\n', '\r': '\\r', '\t': '\\t' };
+          return map[ch] || '';
+        }),
+      );
       const classifications: ClassificationResult[] = JSON.parse(jsonStr);
 
       // Update each SERP result with classification
