@@ -14,11 +14,11 @@ export const config = {
     serviceRoleKey: requireEnv('SUPABASE_SERVICE_ROLE_KEY'),
   },
   google: {
-    cseKey: requireEnv('GOOGLE_CSE_KEY'),
-    cseCx: requireEnv('GOOGLE_CSE_CX'),
+    cseKey: optionalEnv('GOOGLE_CSE_KEY'),
+    cseCx: optionalEnv('GOOGLE_CSE_CX'),
   },
   firecrawl: {
-    key: requireEnv('FIRECRAWL_KEY'),
+    key: optionalEnv('FIRECRAWL_KEY'),
   },
   llm: {
     ollamaUrl: optionalEnv('OLLAMA_URL'),

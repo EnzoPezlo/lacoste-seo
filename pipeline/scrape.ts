@@ -1,55 +1,6 @@
 import { supabase } from './lib/supabase.js';
-import { config } from './lib/config.js';
 import { log } from './lib/logger.js';
-
-async function firecrawlScrape(
-  url: string,
-  format: 'markdown' | 'rawHtml',
-  options: Record<string, unknown> = {},
-): Promise<string> {
-  const response = await fetch('https://api.firecrawl.dev/v1/scrape', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${config.firecrawl.key}`,
-    },
-    body: JSON.stringify({
-      url,
-      formats: [format],
-      onlyMainContent: format === 'markdown',
-      blockAds: true,
-      removeBase64Images: true,
-      timeout: 30000,
-      ...options,
-    }),
-    signal: AbortSignal.timeout(60_000),
-  });
-
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(`Firecrawl error: ${response.status} — ${body}`);
-  }
-
-  const data = await response.json();
-  if (format === 'markdown') {
-    return data.data?.markdown || '';
-  }
-  return data.data?.rawHtml || data.data?.html || '';
-}
-
-function extractStructuredData(headHtml: string): unknown[] {
-  const regex = /<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
-  const results: unknown[] = [];
-  let match;
-  while ((match = regex.exec(headHtml)) !== null) {
-    try {
-      results.push(JSON.parse(match[1]));
-    } catch {
-      // Skip invalid JSON-LD blocks
-    }
-  }
-  return results;
-}
+import { firecrawlScrape, extractStructuredData } from './lib/scrape-utils.js';
 
 export async function scrape(runId: string): Promise<void> {
   await log(runId, 'scrape', 'running', 'Starting scraping');

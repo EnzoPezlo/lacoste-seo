@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lacoste SEO Intelligence — Overview</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Inter', sans-serif;
+    background: #fafafa;
+    color: #1a1a1a;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  .slide {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 60px 40px;
+  }
+
+  /* Header */
+  .header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 12px;
+  }
+  .logo {
+    width: 48px; height: 48px;
+    background: #00573F;
+    border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    color: white; font-weight: 700; font-size: 20px;
+  }
+  .header h1 {
+    font-size: 28px;
+    font-weight: 700;
+    color: #00573F;
+  }
+  .subtitle {
+    font-size: 15px;
+    color: #666;
+    margin-bottom: 56px;
+    padding-left: 64px;
+  }
+
+  /* Flow */
+  .flow {
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 0;
+    margin-bottom: 64px;
+  }
+
+  .step {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 200px;
+    position: relative;
+    cursor: default;
+  }
+
+  .step-icon {
+    width: 80px; height: 80px;
+    border-radius: 20px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 36px;
+    margin-bottom: 16px;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    position: relative;
+    z-index: 1;
+  }
+  .step:hover .step-icon {
+    transform: scale(1.08);
+    box-shadow: 0 8px 30px rgba(0,0,0,0.12);
+  }
+
+  .step-icon.green  { background: #00573F; color: white; }
+  .step-icon.blue   { background: #1e40af; color: white; }
+  .step-icon.violet  { background: #7c3aed; color: white; }
+  .step-icon.amber  { background: #d97706; color: white; }
+
+  .step-title {
+    font-size: 14px;
+    font-weight: 600;
+    text-align: center;
+    margin-bottom: 6px;
+    color: #1a1a1a;
+  }
+  .step-desc {
+    font-size: 12px;
+    color: #888;
+    text-align: center;
+    line-height: 1.5;
+    max-width: 170px;
+  }
+
+  .arrow {
+    display: flex;
+    align-items: center;
+    padding-top: 28px;
+    color: #ccc;
+    font-size: 24px;
+    min-width: 40px;
+    justify-content: center;
+  }
+  .arrow svg {
+    width: 40px;
+    height: 20px;
+  }
+
+  /* Value cards */
+  .section-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: #00573F;
+    margin-bottom: 24px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .section-title::before {
+    content: '';
+    width: 4px;
+    height: 20px;
+    background: #00573F;
+    border-radius: 2px;
+  }
+
+  .value-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+    margin-bottom: 64px;
+  }
+
+  .value-card {
+    background: white;
+    border: 1px solid #e5e5e5;
+    border-radius: 16px;
+    padding: 28px 24px;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+  }
+  .value-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 20px rgba(0,0,0,0.06);
+  }
+
+  .value-card .icon {
+    width: 44px; height: 44px;
+    border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px;
+    margin-bottom: 16px;
+  }
+  .value-card .icon.green  { background: #ecfdf5; color: #00573F; }
+  .value-card .icon.blue   { background: #eff6ff; color: #1e40af; }
+  .value-card .icon.violet { background: #f5f3ff; color: #7c3aed; }
+
+  .value-card h3 {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+  .value-card p {
+    font-size: 13px;
+    color: #666;
+    line-height: 1.6;
+  }
+
+  /* Dashboard preview */
+  .dashboard-section {
+    margin-bottom: 48px;
+  }
+
+  .dashboard-preview {
+    background: white;
+    border: 1px solid #e5e5e5;
+    border-radius: 16px;
+    padding: 32px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+  }
+
+  .preview-card {
+    background: #fafafa;
+    border: 1px solid #eee;
+    border-radius: 12px;
+    padding: 20px;
+  }
+  .preview-card h4 {
+    font-size: 13px;
+    font-weight: 600;
+    color: #00573F;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .preview-bar {
+    height: 8px;
+    border-radius: 4px;
+    margin-bottom: 8px;
+  }
+  .preview-bar.b1 { background: #00573F; width: 90%; }
+  .preview-bar.b2 { background: #00573F; width: 70%; opacity: 0.7; }
+  .preview-bar.b3 { background: #00573F; width: 55%; opacity: 0.5; }
+  .preview-bar.b4 { background: #d4d4d4; width: 40%; }
+
+  .preview-tag {
+    display: inline-block;
+    font-size: 11px;
+    padding: 3px 10px;
+    border-radius: 20px;
+    margin: 2px;
+    font-weight: 500;
+  }
+  .preview-tag.green { background: #ecfdf5; color: #00573F; }
+  .preview-tag.red   { background: #fef2f2; color: #dc2626; }
+  .preview-tag.blue  { background: #eff6ff; color: #1e40af; }
+
+  .preview-list {
+    list-style: none;
+    font-size: 12px;
+    color: #555;
+  }
+  .preview-list li {
+    padding: 6px 0;
+    border-bottom: 1px solid #eee;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .preview-list li:last-child { border-bottom: none; }
+  .preview-list .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .preview-list .dot.green { background: #00573F; }
+  .preview-list .dot.amber { background: #d97706; }
+  .preview-list .dot.red   { background: #dc2626; }
+
+  /* Footer */
+  .footer {
+    text-align: center;
+    color: #aaa;
+    font-size: 12px;
+    padding: 24px 0;
+    border-top: 1px solid #eee;
+  }
+
+  /* Animations */
+  @keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .flow    { animation: fadeInUp 0.6s ease; }
+  .value-grid { animation: fadeInUp 0.6s ease 0.2s both; }
+  .dashboard-section { animation: fadeInUp 0.6s ease 0.4s both; }
+</style>
+</head>
+<body>
+
+<div class="slide">
+  <!-- Header -->
+  <div class="header">
+    <div class="logo">L</div>
+    <h1>SEO Intelligence Platform</h1>
+  </div>
+  <p class="subtitle">Veille concurrentielle automatisée — Comprendre et combler les gaps SEO</p>
+
+  <!-- Flow -->
+  <div class="flow">
+    <div class="step">
+      <div class="step-icon green">&#x1F50D;</div>
+      <div class="step-title">Collecte SERP</div>
+      <div class="step-desc">Analyse des résultats Google pour chaque mot-clé cible</div>
+    </div>
+    <div class="arrow"><svg viewBox="0 0 40 20"><path d="M0 10 L30 10 M24 4 L32 10 L24 16" stroke="#ccc" stroke-width="2" fill="none"/></svg></div>
+    <div class="step">
+      <div class="step-icon blue">&#x1F4F8;</div>
+      <div class="step-title">Capture des pages</div>
+      <div class="step-desc">Scraping du contenu, méta-données et données structurées</div>
+    </div>
+    <div class="arrow"><svg viewBox="0 0 40 20"><path d="M0 10 L30 10 M24 4 L32 10 L24 16" stroke="#ccc" stroke-width="2" fill="none"/></svg></div>
+    <div class="step">
+      <div class="step-icon violet">&#x1F916;</div>
+      <div class="step-title">Analyse IA</div>
+      <div class="step-desc">L'IA compare Lacoste vs concurrents et identifie les gaps</div>
+    </div>
+    <div class="arrow"><svg viewBox="0 0 40 20"><path d="M0 10 L30 10 M24 4 L32 10 L24 16" stroke="#ccc" stroke-width="2" fill="none"/></svg></div>
+    <div class="step">
+      <div class="step-icon amber">&#x1F4CA;</div>
+      <div class="step-title">Dashboard</div>
+      <div class="step-desc">Recommandations actionnables par mot-clé et marché</div>
+    </div>
+  </div>
+
+  <!-- Value proposition -->
+  <div class="section-title">Ce que la plateforme apporte</div>
+  <div class="value-grid">
+    <div class="value-card">
+      <div class="icon green">&#x1F3AF;</div>
+      <h3>Gap Analysis</h3>
+      <p>Identification précise des écarts SEO entre Lacoste et les concurrents mieux positionnés : contenu, structure, méta-données, données structurées.</p>
+    </div>
+    <div class="value-card">
+      <div class="icon blue">&#x1F4CB;</div>
+      <h3>Recommandations actionnables</h3>
+      <p>Chaque analyse produit 3 à 5 actions concrètes et prioritisées pour améliorer le positionnement sur le mot-clé ciblé.</p>
+    </div>
+    <div class="value-card">
+      <div class="icon violet">&#x1F504;</div>
+      <h3>Suivi mensuel</h3>
+      <p>Exécution automatique chaque mois pour détecter les mouvements de positions et mesurer l'impact des optimisations.</p>
+    </div>
+  </div>
+
+  <!-- Dashboard preview -->
+  <div class="dashboard-section">
+    <div class="section-title">Aperçu du dashboard</div>
+    <div class="dashboard-preview">
+      <div class="preview-card">
+        <h4>&#x1F3AF; Analyse par mot-clé</h4>
+        <div style="margin-bottom: 12px;">
+          <span class="preview-tag green">Lacoste #4</span>
+          <span class="preview-tag blue">transactional</span>
+        </div>
+        <div class="preview-bar b1"></div>
+        <div class="preview-bar b2"></div>
+        <div class="preview-bar b3"></div>
+        <div class="preview-bar b4"></div>
+        <div style="margin-top: 12px;">
+          <span class="preview-tag red">meta_title</span>
+          <span class="preview-tag red">content_depth</span>
+          <span class="preview-tag red">structured_data</span>
+        </div>
+      </div>
+      <div class="preview-card">
+        <h4>&#x1F4CA; Positions Lacoste</h4>
+        <ul class="preview-list">
+          <li><span class="dot green"></span> sacoche homme — <strong>#4</strong> FR</li>
+          <li><span class="dot amber"></span> polo homme — <strong>absent</strong> FR</li>
+          <li><span class="dot amber"></span> sneakers homme — <strong>absent</strong> FR</li>
+          <li><span class="dot green"></span> lacoste polo — <strong>#1</strong> US</li>
+          <li><span class="dot red"></span> mens designer jacket — <strong>absent</strong> US</li>
+        </ul>
+      </div>
+      <div class="preview-card">
+        <h4>&#x2705; 5 axes d'analyse</h4>
+        <ul class="preview-list">
+          <li><span class="dot green"></span> Alignement intention de recherche</li>
+          <li><span class="dot green"></span> Couverture sémantique</li>
+          <li><span class="dot green"></span> Structure Hn & maillage</li>
+          <li><span class="dot green"></span> Optimisation méta</li>
+          <li><span class="dot green"></span> Données structurées</li>
+        </ul>
+      </div>
+      <div class="preview-card">
+        <h4>&#x1F4C5; Cadence</h4>
+        <ul class="preview-list">
+          <li><span class="dot green"></span> Collecte SERP mensuelle automatisée</li>
+          <li><span class="dot green"></span> 42 mots-clés FR + US</li>
+          <li><span class="dot green"></span> Desktop + Mobile</li>
+          <li><span class="dot amber"></span> Détection des mouvements de positions</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">
+    Lacoste SEO Intelligence — Digilityx &middot; Mars 2026
+  </div>
+</div>
+
+</body>
+</html>

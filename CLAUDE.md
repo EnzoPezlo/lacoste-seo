@@ -60,8 +60,16 @@ npx tsx pipeline/run.ts   # Run full pipeline locally
 - `LLM_FALLBACK_API_KEY`, `LLM_FALLBACK_MODEL` — Cloud LLM fallback
 
 ### GitHub Secrets vs Variables
-- **Secrets** (`secrets.*`): all API keys, passwords, URLs containing credentials
-- **Variables** (`vars.*`): `LLM_FALLBACK_PROVIDER`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`
+- **Secrets** (`secrets.*`): all API keys, passwords, URLs containing credentials, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`
+- **Variables** (`vars.*`): `LLM_FALLBACK_PROVIDER`
+
+### Running pipeline locally
+```bash
+set -a && source .env.local && set +a && npx tsx pipeline/run.ts
+# Or in resume mode:
+set -a && source .env.local && set +a && RESUME_RUN_ID=<uuid> npx tsx pipeline/run.ts
+```
+Note: Google CSE and Firecrawl keys are optional — pipeline skips those steps in resume mode.
 
 ## Pipeline Resume
 
@@ -85,7 +93,38 @@ Resume is fully idempotent — the pipeline auto-detects completed steps:
 
 ## LLM JSON Handling
 
-LLM responses (especially from small models like ministral-3:14b) often contain malformed JSON. The pipeline uses `jsonrepair` to fix common issues: missing commas, unclosed brackets, control characters in strings, trailing commas.
+LLM responses (especially from small models like ministral-3:14b) often contain malformed JSON. The pipeline uses:
+- `jsonrepair` to fix structural issues (missing commas, unclosed brackets, trailing commas)
+- `parseLLMJsonArray<T>()` to extract JSON arrays from LLM responses (strips markdown fences, finds array boundaries, cleans control characters)
+- Retry loop (3 attempts, escalating temperature 0.2→0.4) for resilience
+- Type coercion via `str()` helper — never trust LLM field types (may return objects instead of strings)
+- `lacoste_position` is sourced from SERP data, NOT from LLM output (LLM may return "absent" as string)
+
+## Gap Analysis Content Format
+
+Analyses are stored as structured markdown in the `content` field:
+```
+### Alignement intention
+{text}
+
+### Couverture sémantique
+{text}
+
+### Structure
+{text}
+
+### Optimisation meta
+{text}
+
+### Données structurées
+{text}
+
+## Recommandations
+1. {reco}
+2. {reco}
+```
+
+The dashboard parses this format and renders it as collapsible sections with color-coded icons.
 
 ## Known Limitations
 
@@ -94,3 +133,4 @@ LLM responses (especially from small models like ministral-3:14b) often contain 
 - **Edge Functions** (`trigger-run`, `manage-keywords`) are defined but not yet deployed to Supabase
 - **Gap analysis** processes keywords one at a time (batch_size=1) due to LLM context constraints with ministral-3:14b
 - **Classification quality** with ministral-3:14b is ~85% on actor_category — inconsistencies between desktop/mobile for same URL, some boutiques misclassified as brands
+- **Lacoste absent from SERP**: When Lacoste is not in the top 20, the pipeline currently has no Lacoste page to compare. A Lacoste sitemap reference system is designed (see `docs/superpowers/specs/2026-03-24-lacoste-reference-and-links-design.md`) but not yet implemented

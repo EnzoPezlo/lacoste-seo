@@ -208,7 +208,11 @@ export function SerpPage() {
                       </td>
                       <td className="p-3 font-medium text-zinc-900">{(r as any).keywords.keyword}</td>
                       <td className="p-3 text-zinc-700">{r.actor_name || r.domain}</td>
-                      <td className="p-3 text-zinc-400 text-xs">{r.domain}</td>
+                      <td className="p-3 text-xs">
+                        <a href={r.url} target="_blank" rel="noopener noreferrer" className="text-brand hover:underline">
+                          {r.domain}
+                        </a>
+                      </td>
                       <td className="p-3">
                         {r.actor_category && (
                           <span className="text-xs bg-zinc-100 text-zinc-600 px-2 py-0.5 rounded-full">{r.actor_category}</span>

@@ -3,6 +3,8 @@ import { log } from './lib/logger.js';
 import { callLLM } from './lib/llm.js';
 import { ANALYZE_GAP_SYSTEM, analyzeGapUserPrompt } from './prompts/analyze-gap.js';
 import { jsonrepair } from 'jsonrepair';
+import { findLacostePageForKeyword } from './lib/lacoste-matcher.js';
+import { firecrawlScrape, extractStructuredData } from './lib/scrape-utils.js';
 
 const MAX_RETRIES = 3;
 
@@ -31,14 +33,90 @@ function parseLLMJsonArray<T>(raw: string): T[] {
   return JSON.parse(jsonrepair(str));
 }
 
+interface SourceRef {
+  position: number | 'lacoste_ref';
+  domain: string;
+  actor_name: string;
+  url: string;
+  match_method?: 'token' | 'llm';
+}
+
+/** Get a fresh snapshot for a Lacoste reference page, scraping if needed */
+async function getLacostRefSnapshot(url: string): Promise<{
+  markdown_content: string | null;
+  head_html: string | null;
+  structured_data: unknown | null;
+} | null> {
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+
+  // Check lacoste_snapshots cache
+  const { data: cached } = await supabase
+    .from('lacoste_snapshots')
+    .select('markdown_content, head_html, structured_data, scraped_at')
+    .eq('url', url)
+    .single();
+
+  if (cached && cached.scraped_at > thirtyDaysAgo) return cached;
+
+  // Check regular snapshots table (may have been scraped in a SERP run)
+  const { data: serpSnap } = await supabase
+    .from('snapshots')
+    .select('markdown_content, head_html, structured_data, created_at')
+    .eq('url', url)
+    .gt('created_at', thirtyDaysAgo)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .single();
+
+  if (serpSnap) {
+    // Copy to lacoste_snapshots for future use
+    await supabase.from('lacoste_snapshots').upsert({
+      url,
+      markdown_content: serpSnap.markdown_content,
+      head_html: serpSnap.head_html,
+      structured_data: serpSnap.structured_data,
+    }, { onConflict: 'url' });
+    return serpSnap;
+  }
+
+  // Scrape fresh
+  try {
+    const markdownContent = await firecrawlScrape(url, 'markdown');
+    const headHtml = await firecrawlScrape(url, 'rawHtml', { onlyMainContent: false });
+    const headMatch = headHtml.match(/<head[^>]*>([\s\S]*?)<\/head>/i);
+    const headSection = headMatch ? headMatch[0] : headHtml.slice(0, 5000);
+    const structuredData = extractStructuredData(headSection);
+
+    const snapshot = {
+      markdown_content: markdownContent,
+      head_html: headSection,
+      structured_data: structuredData.length > 0 ? structuredData : null,
+    };
+
+    await supabase.from('lacoste_snapshots').upsert({
+      url,
+      ...snapshot,
+    }, { onConflict: 'url' });
+
+    return snapshot;
+  } catch (err) {
+    console.error(`[analyze_gap] Failed to scrape Lacoste ref ${url}:`, (err as Error).message);
+    return null;
+  }
+}
+
 interface GapAnalysisResult {
   keyword: string;
   country: string;
   device: string;
   search_intent: string;
   lacoste_position: number;
-  diagnostic: string;
-  recommendations: string;
+  intent_match: string;
+  content_gap: string;
+  structure_gap: string;
+  meta_gap: string;
+  schema_gap: string;
+  recommendations: string[];
   tags: string[];
 }
 
@@ -113,6 +191,7 @@ export async function analyzeGap(runId: string): Promise<void> {
       try {
         // Build aggregated content for the batch
         let aggregatedContent = '';
+        const batchSources: SourceRef[] = [];
 
         for (const item of batch) {
           const [keywordId, country, device] = item.key.split('|');
@@ -126,7 +205,6 @@ export async function analyzeGap(runId: string): Promise<void> {
           const top10 = item.results.filter((r) => r.position <= 10 || r.is_lacoste);
 
           for (const result of top10) {
-            // Fetch snapshot for this URL
             const { data: snapshot } = await supabase
               .from('snapshots')
               .select('markdown_content, head_html, structured_data')
@@ -135,12 +213,19 @@ export async function analyzeGap(runId: string): Promise<void> {
               .single();
 
             const label = result.is_lacoste
-              ? `LACOSTE (Position ${result.position})`
-              : `Position ${result.position} : ${result.domain}`;
+              ? `LACOSTE (Position ${result.position}) — ${result.url}`
+              : `Position ${result.position} : ${result.domain} (${result.url})`;
+
+            // Track source
+            batchSources.push({
+              position: result.position,
+              domain: result.domain,
+              actor_name: result.actor_name || result.domain,
+              url: result.url,
+            });
 
             aggregatedContent += `--- ${label} ---\n`;
             if (snapshot) {
-              // Truncate markdown to ~3000 chars per page to fit context
               const md = snapshot.markdown_content?.slice(0, 1500) || '(no content)';
               aggregatedContent += `META HEAD: ${snapshot.head_html?.slice(0, 300) || '(no head)'}\n`;
               if (snapshot.structured_data) {
@@ -149,6 +234,35 @@ export async function analyzeGap(runId: string): Promise<void> {
               aggregatedContent += `CONTENU MARKDOWN:\n${md}\n\n`;
             } else {
               aggregatedContent += `(snapshot non disponible — scraping en erreur)\n\n`;
+            }
+          }
+
+          // If Lacoste absent, find and inject reference page
+          if (!lacostePosResult) {
+            const match = await findLacostePageForKeyword(keyword, country);
+            if (match) {
+              const refSnapshot = await getLacostRefSnapshot(match.url);
+              batchSources.push({
+                position: 'lacoste_ref',
+                domain: 'lacoste.com',
+                actor_name: 'Lacoste',
+                url: match.url,
+                match_method: match.matchMethod,
+              });
+
+              aggregatedContent += `--- LACOSTE (Absent du Top 20 — page la plus pertinente : ${match.url}) ---\n`;
+              if (refSnapshot) {
+                const md = refSnapshot.markdown_content?.slice(0, 1500) || '(no content)';
+                aggregatedContent += `META HEAD: ${refSnapshot.head_html?.slice(0, 300) || '(no head)'}\n`;
+                if (refSnapshot.structured_data) {
+                  aggregatedContent += `STRUCTURED DATA: ${JSON.stringify(refSnapshot.structured_data).slice(0, 300)}\n`;
+                }
+                aggregatedContent += `CONTENU MARKDOWN:\n${md}\n\n`;
+              } else {
+                aggregatedContent += `(scraping en erreur)\n\n`;
+              }
+            } else {
+              aggregatedContent += `--- LACOSTE : aucune page pertinente trouvée sur lacoste.com ---\n\n`;
             }
           }
         }
@@ -166,7 +280,7 @@ export async function analyzeGap(runId: string): Promise<void> {
               prompt,
               systemPrompt: ANALYZE_GAP_SYSTEM,
               temperature: 0.2 + (attempt - 1) * 0.1, // slightly increase temp on retries
-              maxTokens: 8000,
+              maxTokens: 4000,
             });
 
             analyses = parseLLMJsonArray<GapAnalysisResult>(response);
@@ -205,17 +319,41 @@ export async function analyzeGap(runId: string): Promise<void> {
 
           const [keywordId, country, device] = matchingItem.key.split('|');
 
-          await supabase.from('analyses').insert({
+          // Coerce fields: LLM may return objects instead of strings, or "absent" instead of null
+          const str = (v: unknown): string =>
+            typeof v === 'string' ? v : typeof v === 'object' && v ? JSON.stringify(v) : String(v ?? '');
+          const recoList = (Array.isArray(analysis.recommendations) ? analysis.recommendations : [])
+            .map((r: unknown, idx: number) => `${idx + 1}. ${str(r)}`)
+            .join('\n');
+
+          const content = `### Alignement intention\n${str(analysis.intent_match)}\n\n### Couverture sémantique\n${str(analysis.content_gap)}\n\n### Structure\n${str(analysis.structure_gap)}\n\n### Optimisation meta\n${str(analysis.meta_gap)}\n\n### Données structurées\n${str(analysis.schema_gap)}\n\n## Recommandations\n${recoList}`;
+
+          // Use original SERP data for lacoste_position (LLM may return "absent" or wrong type)
+          const lacostePosResult = matchingItem.results.find((r) => r.is_lacoste);
+          const lacostePosition = lacostePosResult?.position ?? null;
+
+          const searchIntent = typeof analysis.search_intent === 'string'
+            ? analysis.search_intent : null;
+          const tags = Array.isArray(analysis.tags)
+            ? analysis.tags.filter((t: unknown) => typeof t === 'string') : [];
+
+          const { error: insertError } = await supabase.from('analyses').insert({
             run_id: runId,
             keyword_id: keywordId,
             country,
             device,
             analysis_type: 'lacoste_gap',
-            content: `${analysis.diagnostic}\n\n## Recommandations\n${analysis.recommendations}`,
-            tags: analysis.tags,
-            lacoste_position: analysis.lacoste_position,
-            search_intent: analysis.search_intent,
+            content,
+            tags,
+            lacoste_position: lacostePosition,
+            search_intent: searchIntent,
+            sources: batchSources,
           });
+
+          if (insertError) {
+            console.error(`[analyze_gap] Insert failed for "${analysis.keyword}":`, insertError.message);
+            continue;
+          }
 
           analyzed++;
         }

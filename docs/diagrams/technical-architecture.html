@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lacoste SEO — Technical Architecture</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Inter', sans-serif;
+    background: #0f172a;
+    color: #e2e8f0;
+    min-height: 100vh;
+    padding: 48px 40px;
+  }
+
+  .container { max-width: 1200px; margin: 0 auto; }
+
+  h1 {
+    font-size: 24px;
+    font-weight: 700;
+    color: #34d399;
+    margin-bottom: 4px;
+  }
+  .subtitle {
+    font-size: 13px;
+    color: #64748b;
+    margin-bottom: 48px;
+  }
+
+  /* Section headers */
+  .section {
+    margin-bottom: 48px;
+  }
+  .section-header {
+    font-size: 14px;
+    font-weight: 600;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .section-header::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: #1e293b;
+  }
+
+  /* Pipeline flow */
+  .pipeline {
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+    margin-bottom: 16px;
+    overflow-x: auto;
+    padding-bottom: 8px;
+  }
+
+  .pipe-step {
+    flex: 1;
+    min-width: 180px;
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 12px;
+    padding: 20px 16px;
+    position: relative;
+    transition: border-color 0.2s;
+  }
+  .pipe-step:hover {
+    border-color: #34d399;
+  }
+  .pipe-step .num {
+    position: absolute;
+    top: -10px;
+    left: 16px;
+    background: #34d399;
+    color: #0f172a;
+    font-size: 11px;
+    font-weight: 700;
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .pipe-step h3 {
+    font-size: 14px;
+    font-weight: 600;
+    color: #f1f5f9;
+    margin-bottom: 8px;
+  }
+  .pipe-step .file {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: #34d399;
+    margin-bottom: 10px;
+    opacity: 0.8;
+  }
+  .pipe-step .detail {
+    font-size: 12px;
+    color: #94a3b8;
+    line-height: 1.6;
+  }
+  .pipe-step .detail li {
+    list-style: none;
+    padding: 2px 0;
+  }
+  .pipe-step .detail li::before {
+    content: '→ ';
+    color: #475569;
+  }
+
+  .pipe-arrow {
+    display: flex;
+    align-items: center;
+    padding: 0 4px;
+    color: #475569;
+    font-size: 20px;
+    flex-shrink: 0;
+  }
+
+  /* Stack boxes */
+  .stack-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+  }
+
+  .stack-box {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 12px;
+    padding: 20px;
+    transition: border-color 0.2s;
+  }
+  .stack-box:hover { border-color: #34d399; }
+  .stack-box h4 {
+    font-size: 13px;
+    font-weight: 600;
+    color: #f1f5f9;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .stack-box .tag {
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-weight: 500;
+  }
+  .tag.green  { background: #052e16; color: #34d399; }
+  .tag.blue   { background: #172554; color: #60a5fa; }
+  .tag.violet { background: #2e1065; color: #a78bfa; }
+  .tag.amber  { background: #451a03; color: #fbbf24; }
+  .tag.rose   { background: #4c0519; color: #fb7185; }
+
+  .stack-box ul {
+    list-style: none;
+    font-size: 12px;
+    color: #94a3b8;
+  }
+  .stack-box ul li {
+    padding: 3px 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .stack-box ul li .dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .dot.green  { background: #34d399; }
+  .dot.blue   { background: #60a5fa; }
+  .dot.amber  { background: #fbbf24; }
+  .dot.rose   { background: #fb7185; }
+  .dot.violet { background: #a78bfa; }
+
+  /* Database schema */
+  .db-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+  }
+  .db-table {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 12px;
+    overflow: hidden;
+    transition: border-color 0.2s;
+  }
+  .db-table:hover { border-color: #60a5fa; }
+  .db-table .table-name {
+    background: #172554;
+    padding: 10px 16px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    font-weight: 600;
+    color: #60a5fa;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .db-table .table-name .badge {
+    font-size: 9px;
+    background: #1e3a5f;
+    color: #93c5fd;
+    padding: 2px 6px;
+    border-radius: 8px;
+    font-family: 'Inter', sans-serif;
+  }
+  .db-table .cols {
+    padding: 12px 16px;
+  }
+  .db-table .col {
+    font-size: 11px;
+    padding: 3px 0;
+    display: flex;
+    justify-content: space-between;
+    color: #94a3b8;
+  }
+  .db-table .col .type {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: #64748b;
+  }
+  .db-table .col.pk { color: #fbbf24; }
+  .db-table .col.fk { color: #a78bfa; }
+
+  /* Lacoste reference flow */
+  .ref-flow {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .ref-box {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 12px;
+    padding: 16px 20px;
+    text-align: center;
+    min-width: 160px;
+    transition: border-color 0.2s;
+  }
+  .ref-box:hover { border-color: #34d399; }
+  .ref-box .emoji { font-size: 28px; margin-bottom: 8px; }
+  .ref-box h4 { font-size: 13px; font-weight: 600; color: #f1f5f9; margin-bottom: 4px; }
+  .ref-box p { font-size: 11px; color: #64748b; }
+  .ref-arrow {
+    color: #475569;
+    font-size: 18px;
+    padding: 0 8px;
+  }
+
+  .decision {
+    background: #451a03;
+    border: 1px solid #92400e;
+    border-radius: 12px;
+    padding: 16px 20px;
+    text-align: center;
+    min-width: 160px;
+    transform: rotate(0deg);
+  }
+  .decision h4 { color: #fbbf24; font-size: 13px; }
+  .decision p { font-size: 11px; color: #a16207; }
+
+  /* LLM section */
+  .llm-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  .llm-box {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 12px;
+    padding: 20px;
+  }
+  .llm-box h4 {
+    font-size: 13px;
+    font-weight: 600;
+    color: #f1f5f9;
+    margin-bottom: 12px;
+  }
+  .llm-box pre {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: #94a3b8;
+    background: #0f172a;
+    border-radius: 8px;
+    padding: 12px;
+    overflow-x: auto;
+    line-height: 1.6;
+  }
+  .llm-box pre .key { color: #60a5fa; }
+  .llm-box pre .val { color: #34d399; }
+  .llm-box pre .comment { color: #475569; }
+
+  /* Deploy section */
+  .deploy-flow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+  }
+  .deploy-box {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 12px;
+    padding: 16px 24px;
+    text-align: center;
+  }
+  .deploy-box h4 { font-size: 13px; color: #f1f5f9; margin-bottom: 4px; }
+  .deploy-box p { font-size: 11px; color: #64748b; }
+
+  .footer {
+    text-align: center;
+    color: #334155;
+    font-size: 11px;
+    margin-top: 48px;
+    padding-top: 24px;
+    border-top: 1px solid #1e293b;
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <h1>Lacoste SEO Intelligence — Technical Architecture</h1>
+  <p class="subtitle">Pipeline TypeScript + Supabase + Ollama · Internal documentation</p>
+
+  <!-- Pipeline Steps -->
+  <div class="section">
+    <div class="section-header">Pipeline Flow (pipeline/run.ts)</div>
+    <div class="pipeline">
+      <div class="pipe-step">
+        <div class="num">1</div>
+        <h3>Collect SERP</h3>
+        <div class="file">collect-serp.ts</div>
+        <ul class="detail">
+          <li>Google Custom Search API</li>
+          <li>Top 20 results per keyword</li>
+          <li>Per country × device</li>
+          <li>→ serp_results table</li>
+        </ul>
+      </div>
+      <div class="pipe-arrow">›</div>
+      <div class="pipe-step">
+        <div class="num">2</div>
+        <h3>Scrape Pages</h3>
+        <div class="file">scrape.ts</div>
+        <ul class="detail">
+          <li>Firecrawl API</li>
+          <li>Markdown + HTML head</li>
+          <li>Structured data (JSON-LD)</li>
+          <li>→ snapshots table</li>
+        </ul>
+      </div>
+      <div class="pipe-arrow">›</div>
+      <div class="pipe-step">
+        <div class="num">3</div>
+        <h3>Classify Actors</h3>
+        <div class="file">classify.ts</div>
+        <ul class="detail">
+          <li>LLM: ministral-3:14b</li>
+          <li>actor_name, category</li>
+          <li>page_type, is_lacoste</li>
+          <li>→ serp_results updated</li>
+        </ul>
+      </div>
+      <div class="pipe-arrow">›</div>
+      <div class="pipe-step">
+        <div class="num">4</div>
+        <h3>Gap Analysis</h3>
+        <div class="file">analyze-gap.ts</div>
+        <ul class="detail">
+          <li>LLM compares Top 10 vs Lacoste</li>
+          <li>5 diagnostic axes + recos</li>
+          <li>Retry × 3 + jsonrepair</li>
+          <li>→ analyses table</li>
+        </ul>
+      </div>
+      <div class="pipe-arrow">›</div>
+      <div class="pipe-step">
+        <div class="num">5</div>
+        <h3>Movement Detection</h3>
+        <div class="file">analyze-movement.ts</div>
+        <ul class="detail">
+          <li>Compare vs previous run</li>
+          <li>Detect position changes</li>
+          <li>New entries / exits</li>
+          <li style="color:#475569;">⏸ Disabled (needs 2+ runs)</li>
+        </ul>
+      </div>
+    </div>
+    <div style="font-size:11px; color:#475569; text-align:center;">
+      Resume mode: <code style="color:#34d399; font-family:'JetBrains Mono',monospace;">RESUME_RUN_ID=uuid</code> skips steps 1-2, auto-detects completed 3-4
+    </div>
+  </div>
+
+  <!-- Tech Stack -->
+  <div class="section">
+    <div class="section-header">Technology Stack</div>
+    <div class="stack-grid">
+      <div class="stack-box">
+        <h4>Frontend <span class="tag green">deployed</span></h4>
+        <ul>
+          <li><span class="dot green"></span> React 19 + Vite</li>
+          <li><span class="dot green"></span> Tailwind CSS v4</li>
+          <li><span class="dot green"></span> React Router v7</li>
+          <li><span class="dot green"></span> Lucide icons + Sonner</li>
+          <li><span class="dot green"></span> GitHub Pages</li>
+        </ul>
+      </div>
+      <div class="stack-box">
+        <h4>Backend <span class="tag blue">Supabase</span></h4>
+        <ul>
+          <li><span class="dot blue"></span> PostgreSQL (managed)</li>
+          <li><span class="dot blue"></span> RLS: anon=read, service=write</li>
+          <li><span class="dot blue"></span> Realtime (runs, logs)</li>
+          <li><span class="dot amber"></span> Edge Functions (planned)</li>
+        </ul>
+      </div>
+      <div class="stack-box">
+        <h4>LLM <span class="tag violet">Ollama</span></h4>
+        <ul>
+          <li><span class="dot violet"></span> ministral-3:14b (primary)</li>
+          <li><span class="dot amber"></span> OpenAI fallback (optional)</li>
+          <li><span class="dot violet"></span> JSON output + jsonrepair</li>
+          <li><span class="dot violet"></span> Retry × 3, temp escalation</li>
+        </ul>
+      </div>
+      <div class="stack-box">
+        <h4>CI/CD <span class="tag amber">GitHub Actions</span></h4>
+        <ul>
+          <li><span class="dot amber"></span> Deploy on push to main</li>
+          <li><span class="dot amber"></span> Pipeline via workflow_dispatch</li>
+          <li><span class="dot amber"></span> Secrets for API keys</li>
+          <li><span class="dot amber"></span> Monthly cron (planned)</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- Database -->
+  <div class="section">
+    <div class="section-header">Database Schema (Supabase PostgreSQL)</div>
+    <div class="db-grid">
+      <div class="db-table">
+        <div class="table-name">keywords <span class="badge">seed</span></div>
+        <div class="cols">
+          <div class="col pk">id UUID (PK)</div>
+          <div class="col">keyword TEXT</div>
+          <div class="col">category TEXT</div>
+          <div class="col">countries TEXT[]</div>
+          <div class="col">devices TEXT[]</div>
+        </div>
+      </div>
+      <div class="db-table">
+        <div class="table-name">runs <span class="badge">per execution</span></div>
+        <div class="cols">
+          <div class="col pk">id UUID (PK)</div>
+          <div class="col">run_label TEXT</div>
+          <div class="col">type TEXT</div>
+          <div class="col">status TEXT</div>
+          <div class="col">started_at / finished_at</div>
+        </div>
+      </div>
+      <div class="db-table">
+        <div class="table-name">serp_results <span class="badge">~320/run</span></div>
+        <div class="cols">
+          <div class="col pk">id UUID (PK)</div>
+          <div class="col fk">run_id → runs</div>
+          <div class="col fk">keyword_id → keywords</div>
+          <div class="col">position, url, domain</div>
+          <div class="col">is_lacoste, actor_name</div>
+          <div class="col">actor_category, page_type</div>
+        </div>
+      </div>
+      <div class="db-table">
+        <div class="table-name">snapshots <span class="badge">~150/run</span></div>
+        <div class="cols">
+          <div class="col pk">id UUID (PK)</div>
+          <div class="col fk">run_id → runs</div>
+          <div class="col">url TEXT</div>
+          <div class="col">markdown_content TEXT</div>
+          <div class="col">head_html TEXT</div>
+          <div class="col">structured_data JSONB</div>
+        </div>
+      </div>
+      <div class="db-table">
+        <div class="table-name">analyses <span class="badge">~10/run</span></div>
+        <div class="cols">
+          <div class="col pk">id UUID (PK)</div>
+          <div class="col fk">run_id → runs</div>
+          <div class="col fk">keyword_id → keywords</div>
+          <div class="col">country, device</div>
+          <div class="col">analysis_type, content</div>
+          <div class="col">tags[], lacoste_position</div>
+          <div class="col">sources JSONB <span style="color:#34d399;">(new)</span></div>
+        </div>
+      </div>
+      <div class="db-table">
+        <div class="table-name">lacoste_pages <span class="badge" style="background:#052e16;color:#34d399;">new</span></div>
+        <div class="cols">
+          <div class="col pk">id UUID (PK)</div>
+          <div class="col">url TEXT (UNIQUE)</div>
+          <div class="col">locale, path, page_type</div>
+          <div class="col">is_new BOOLEAN</div>
+          <div class="col">sitemap_last_seen</div>
+          <div class="col">removed_at (soft delete)</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Lacoste Reference -->
+  <div class="section">
+    <div class="section-header">Lacoste Reference System (planned)</div>
+    <div class="ref-flow">
+      <div class="ref-box">
+        <div class="emoji">&#x1F5FA;</div>
+        <h4>Sitemap Crawl</h4>
+        <p>Monthly parse of<br>lacoste.com/sitemap.xml</p>
+      </div>
+      <div class="ref-arrow">→</div>
+      <div class="ref-box">
+        <div class="emoji">&#x1F4BE;</div>
+        <h4>lacoste_pages</h4>
+        <p>URL index with locale,<br>page type, new/removed flags</p>
+      </div>
+      <div class="ref-arrow">→</div>
+      <div class="decision">
+        <h4>Lacoste in SERP?</h4>
+        <p>Check is_lacoste<br>in serp_results</p>
+      </div>
+      <div class="ref-arrow">→</div>
+      <div class="ref-box">
+        <div class="emoji">&#x1F50D;</div>
+        <h4>Token Matching</h4>
+        <p>Locale filter → tokenize<br>→ score → top 3</p>
+      </div>
+      <div class="ref-arrow">→</div>
+      <div class="ref-box">
+        <div class="emoji">&#x1F4F8;</div>
+        <h4>Scrape & Cache</h4>
+        <p>Firecrawl if stale (>30d)<br>→ lacoste_snapshots</p>
+      </div>
+      <div class="ref-arrow">→</div>
+      <div class="ref-box" style="border-color:#34d399;">
+        <div class="emoji">&#x1F916;</div>
+        <h4>Enriched Prompt</h4>
+        <p>Top 10 + Lacoste page<br>→ full comparison</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- LLM Processing -->
+  <div class="section">
+    <div class="section-header">LLM Processing Details</div>
+    <div class="llm-grid">
+      <div class="llm-box">
+        <h4>Prompt Structure (V2)</h4>
+        <pre><span class="comment">// System prompt</span>
+<span class="val">"Expert SEO. Analyse on-site uniquement.
+ JSON obligatoire. Réponses courtes."</span>
+
+<span class="comment">// User prompt includes:</span>
+<span class="key">=== MOT-CLÉ : polo homme ===</span>
+<span class="key">--- Position 1 : celio.com (url) ---</span>
+META HEAD: ...
+STRUCTURED DATA: ...
+CONTENU MARKDOWN: ...
+
+<span class="key">--- LACOSTE (Position 4) ---</span>
+<span class="comment">or: LACOSTE (Absent — page ref)</span>
+<span class="comment">or: LACOSTE : aucune page trouvée</span></pre>
+      </div>
+      <div class="llm-box">
+        <h4>Output Format (JSON → Markdown)</h4>
+        <pre><span class="comment">// LLM returns JSON array:</span>
+[{
+  <span class="key">"keyword"</span>: <span class="val">"polo homme"</span>,
+  <span class="key">"search_intent"</span>: <span class="val">"transactional"</span>,
+  <span class="key">"intent_match"</span>: <span class="val">"Le Top 10..."</span>,
+  <span class="key">"content_gap"</span>: <span class="val">"Concurrents..."</span>,
+  <span class="key">"structure_gap"</span>: <span class="val">"..."</span>,
+  <span class="key">"meta_gap"</span>: <span class="val">"..."</span>,
+  <span class="key">"schema_gap"</span>: <span class="val">"..."</span>,
+  <span class="key">"recommendations"</span>: [<span class="val">"..."</span>],
+  <span class="key">"tags"</span>: [<span class="val">"meta_title"</span>, ...]
+}]
+
+<span class="comment">// → stored as markdown sections</span>
+<span class="comment">// → rendered as collapsible cards</span></pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- Deploy -->
+  <div class="section">
+    <div class="section-header">Deployment Architecture</div>
+    <div class="deploy-flow">
+      <div class="deploy-box">
+        <h4>&#x1F4BB; Local Dev</h4>
+        <p>Vite dev server<br><code style="color:#34d399;font-size:11px;">npm run dev</code></p>
+      </div>
+      <div class="ref-arrow">push →</div>
+      <div class="deploy-box">
+        <h4>&#x2699;&#xFE0F; GitHub Actions</h4>
+        <p>Build + deploy on push<br>Pipeline on dispatch/cron</p>
+      </div>
+      <div class="ref-arrow">→</div>
+      <div class="deploy-box" style="border-color:#34d399;">
+        <h4>&#x1F310; GitHub Pages</h4>
+        <p>Static SPA<br><code style="color:#34d399;font-size:11px;">/lacoste-seo/</code></p>
+      </div>
+      <div class="ref-arrow" style="margin-left:32px;">↕</div>
+      <div class="deploy-box" style="border-color:#60a5fa;">
+        <h4>&#x1F5C4; Supabase</h4>
+        <p>PostgreSQL + Realtime<br>API (anon read / service write)</p>
+      </div>
+      <div class="ref-arrow">↔</div>
+      <div class="deploy-box" style="border-color:#a78bfa;">
+        <h4>&#x1F916; Ollama</h4>
+        <p>ministral-3:14b<br>Self-hosted API</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">
+    Lacoste SEO Intelligence · Digilityx · Internal Technical Documentation · March 2026
+  </div>
+</div>
+
+</body>
+</html>
