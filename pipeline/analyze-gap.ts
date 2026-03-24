@@ -4,6 +4,33 @@ import { callLLM } from './lib/llm.js';
 import { ANALYZE_GAP_SYSTEM, analyzeGapUserPrompt } from './prompts/analyze-gap.js';
 import { jsonrepair } from 'jsonrepair';
 
+const MAX_RETRIES = 3;
+
+/**
+ * Extract and parse a JSON array from an LLM response.
+ * Steps: strip markdown fences → extract [...] boundaries → jsonrepair → JSON.parse
+ */
+function parseLLMJsonArray<T>(raw: string): T[] {
+  let str = raw.trim();
+
+  // Strip markdown code fences
+  if (str.startsWith('```')) {
+    str = str.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
+  }
+
+  // Extract JSON array boundaries — find first [ and last ]
+  const firstBracket = str.indexOf('[');
+  const lastBracket = str.lastIndexOf(']');
+  if (firstBracket !== -1 && lastBracket > firstBracket) {
+    str = str.slice(firstBracket, lastBracket + 1);
+  }
+
+  // Clean control characters inside string values (common with small LLMs)
+  str = str.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, ' ');
+
+  return JSON.parse(jsonrepair(str));
+}
+
 interface GapAnalysisResult {
   keyword: string;
   country: string;
@@ -127,35 +154,62 @@ export async function analyzeGap(runId: string): Promise<void> {
         }
 
         const prompt = analyzeGapUserPrompt(aggregatedContent);
-        const response = await callLLM({
-          task: 'analyze_gap',
-          prompt,
-          systemPrompt: ANALYZE_GAP_SYSTEM,
-          temperature: 0.2,
-          maxTokens: 8000,
-        });
 
-        // Parse response — use jsonrepair to fix malformed JSON from small LLMs
-        let jsonStr = response.trim();
-        if (jsonStr.startsWith('```')) {
-          jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
+        // Retry loop: LLM may produce invalid JSON, retry with fresh generation
+        let analyses: GapAnalysisResult[] | null = null;
+        let lastError = '';
+
+        for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+          try {
+            const response = await callLLM({
+              task: 'analyze_gap',
+              prompt,
+              systemPrompt: ANALYZE_GAP_SYSTEM,
+              temperature: 0.2 + (attempt - 1) * 0.1, // slightly increase temp on retries
+              maxTokens: 8000,
+            });
+
+            analyses = parseLLMJsonArray<GapAnalysisResult>(response);
+            break; // success
+          } catch (parseError) {
+            lastError = (parseError as Error).message;
+            console.error(
+              `[analyze_gap] Attempt ${attempt}/${MAX_RETRIES} failed for "${category}":`,
+              lastError.slice(0, 200),
+            );
+            if (attempt < MAX_RETRIES) {
+              console.log(`[analyze_gap] Retrying "${category}" (attempt ${attempt + 1})...`);
+            }
+          }
         }
-        const analyses: GapAnalysisResult[] = JSON.parse(jsonrepair(jsonStr));
 
-        // Store each analysis
+        if (!analyses) {
+          console.error(`[analyze_gap] All ${MAX_RETRIES} attempts failed for "${category}"`);
+          await log(
+            runId,
+            'analyze_gap',
+            'error',
+            `Failed batch in category "${category}" after ${MAX_RETRIES} retries`,
+            { error: lastError },
+          );
+          continue; // skip to next batch
+        }
+
+        // Store each analysis — use original data for keyword_id/country/device
+        // (LLM may return inconsistent values like "France" vs "FR")
         for (const analysis of analyses) {
           const matchingItem = batch.find(
             (b) => b.keyword.keyword === analysis.keyword,
           );
           if (!matchingItem) continue;
 
-          const [keywordId] = matchingItem.key.split('|');
+          const [keywordId, country, device] = matchingItem.key.split('|');
 
           await supabase.from('analyses').insert({
             run_id: runId,
             keyword_id: keywordId,
-            country: analysis.country,
-            device: analysis.device,
+            country,
+            device,
             analysis_type: 'lacoste_gap',
             content: `${analysis.diagnostic}\n\n## Recommandations\n${analysis.recommendations}`,
             tags: analysis.tags,
