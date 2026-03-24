@@ -65,11 +65,15 @@ npx tsx pipeline/run.ts   # Run full pipeline locally
 
 ## Pipeline Resume
 
-To restart from classification (skip SERP + scrape):
+To restart from where it left off (skip SERP + scrape):
 ```
 RESUME_RUN_ID=<uuid> npx tsx pipeline/run.ts
 ```
 Or via GitHub Actions: set the `resume_run_id` input field when triggering manually.
+
+Resume is fully idempotent — the pipeline auto-detects completed steps:
+- **Classification**: skipped if `serp_results.actor_name` already populated
+- **Gap analysis**: skips keyword/country/device combos that already have an `analyses` row
 
 ## Conventions
 
@@ -79,9 +83,14 @@ Or via GitHub Actions: set the `resume_run_id` input field when triggering manua
 - **Error handling**: Pipeline logs errors to DB and continues (batch-level try/catch). Frontend shows errors via sonner toasts
 - **Supabase client**: Frontend uses anon key (`src/lib/supabase.ts`), pipeline uses service role (`pipeline/lib/supabase.ts`)
 
+## LLM JSON Handling
+
+LLM responses (especially from small models like ministral-3:14b) often contain malformed JSON. The pipeline uses `jsonrepair` to fix common issues: missing commas, unclosed brackets, control characters in strings, trailing commas.
+
 ## Known Limitations
 
 - **Movement analysis** is disabled — requires multi-run history (code exists in `analyze-movement.ts`, commented out in `run.ts`)
 - **Device filtering** in SERP collection is not supported by Google CSE — desktop/mobile store identical results
 - **Edge Functions** (`trigger-run`, `manage-keywords`) are defined but not yet deployed to Supabase
 - **Gap analysis** processes keywords one at a time (batch_size=1) due to LLM context constraints with ministral-3:14b
+- **Classification quality** with ministral-3:14b is ~85% on actor_category — inconsistencies between desktop/mobile for same URL, some boutiques misclassified as brands
