@@ -1,7 +1,14 @@
 import { XMLParser } from 'fast-xml-parser';
 import { supabase } from './lib/supabase.js';
+import { config } from './lib/config.js';
 
 const SITEMAP_URL = 'https://www.lacoste.com/sitemap.xml';
+
+/** Locales to crawl via Firecrawl map when sitemap is blocked */
+const MAP_LOCALES = [
+  { locale: 'fr', url: 'https://www.lacoste.com/fr/' },
+  { locale: 'us', url: 'https://www.lacoste.com/us/' },
+];
 
 interface SitemapUrl {
   loc: string;
@@ -22,8 +29,11 @@ function extractLocale(url: string): string {
 /** Fetch and parse a sitemap XML (handles sitemap index + regular sitemaps) */
 async function fetchSitemapUrls(url: string): Promise<SitemapUrl[]> {
   const response = await fetch(url, {
-    headers: { 'User-Agent': 'Lacoste-SEO-Bot/1.0' },
-    signal: AbortSignal.timeout(30_000),
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      'Accept': 'text/xml, application/xml, */*',
+    },
+    signal: AbortSignal.timeout(15_000),
   });
   if (!response.ok) throw new Error(`Sitemap fetch failed: ${response.status}`);
 
@@ -62,30 +72,76 @@ async function fetchSitemapUrls(url: string): Promise<SitemapUrl[]> {
   return [];
 }
 
-export async function refreshSitemap(): Promise<void> {
-  console.log(`\nFetching Lacoste sitemap: ${SITEMAP_URL}\n`);
+/** Discover URLs via Firecrawl's map endpoint (used when sitemap is blocked) */
+async function fetchViaFirecrawlMap(siteUrl: string): Promise<string[]> {
+  if (!config.firecrawl.key) throw new Error('FIRECRAWL_KEY required for map fallback');
 
-  let urls: SitemapUrl[];
+  console.log(`  Using Firecrawl map for ${siteUrl}...`);
+  const response = await fetch('https://api.firecrawl.dev/v1/map', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${config.firecrawl.key}`,
+    },
+    body: JSON.stringify({ url: siteUrl, limit: 5000, ignoreSitemap: true }),
+    signal: AbortSignal.timeout(120_000),
+  });
+
+  if (!response.ok) throw new Error(`Firecrawl map ${response.status}`);
+  const data = await response.json();
+  if (!data.success) throw new Error(`Firecrawl map error: ${data.error || 'unknown'}`);
+  return data.links || [];
+}
+
+export async function refreshSitemap(): Promise<void> {
+  console.log(`\nFetching Lacoste sitemap...\n`);
+
+  let allUrls: string[] = [];
+
+  // Strategy 1: Try XML sitemap directly
   try {
-    urls = await fetchSitemapUrls(SITEMAP_URL);
+    const sitemapUrls = await fetchSitemapUrls(SITEMAP_URL);
+    allUrls = sitemapUrls.map((u) => u.loc);
+    console.log(`Parsed ${allUrls.length} URLs from XML sitemap`);
   } catch (err) {
-    console.error(`Sitemap fetch failed: ${(err as Error).message}`);
-    console.log('Keeping existing data unchanged.');
+    console.log(`XML sitemap blocked (${(err as Error).message}), falling back to Firecrawl map`);
+
+    // Strategy 2: Firecrawl map per locale
+    for (const { locale, url } of MAP_LOCALES) {
+      try {
+        const links = await fetchViaFirecrawlMap(url);
+        // Filter to only lacoste.com URLs with the right locale
+        const localeLinks = links.filter((l) => {
+          try { return new URL(l).hostname.includes('lacoste.com'); }
+          catch { return false; }
+        });
+        console.log(`  ${locale}: ${localeLinks.length} URLs discovered`);
+        allUrls.push(...localeLinks);
+      } catch (err) {
+        console.error(`  Failed to map ${locale}: ${(err as Error).message}`);
+      }
+    }
+  }
+
+  if (allUrls.length === 0) {
+    console.log('No URLs found. Keeping existing data unchanged.');
     return;
   }
 
-  console.log(`Found ${urls.length} URLs in sitemap\n`);
+  // Deduplicate
+  allUrls = [...new Set(allUrls)];
+  console.log(`\nTotal unique URLs: ${allUrls.length}\n`);
 
   const now = new Date().toISOString();
   let inserted = 0;
   let updated = 0;
 
   // Upsert in batches of 100
-  for (let i = 0; i < urls.length; i += 100) {
-    const batch = urls.slice(i, i + 100).map((u) => ({
-      url: u.loc,
-      locale: extractLocale(u.loc),
-      path: new URL(u.loc).pathname,
+  for (let i = 0; i < allUrls.length; i += 100) {
+    const batch = allUrls.slice(i, i + 100).map((url) => ({
+      url,
+      locale: extractLocale(url),
+      path: new URL(url).pathname,
       sitemap_last_seen: now,
       removed_at: null,
     }));
