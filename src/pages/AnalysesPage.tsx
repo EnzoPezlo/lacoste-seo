@@ -16,6 +16,7 @@ interface Analysis {
   movement_type: string | null;
   search_intent: string | null;
   sources: SourceRef[] | null;
+  opportunity_score: number | null;
   country: string;
   device: string;
   keywords: { keyword: string };
@@ -39,6 +40,9 @@ const sectionConfig: Record<string, { icon: typeof Crosshair; label: string; col
   'Structure': { icon: LayoutList, label: 'Structure', color: 'text-amber-600', bg: 'bg-amber-50 border-amber-200' },
   'Optimisation meta': { icon: Type, label: 'Optimisation meta', color: 'text-emerald-600', bg: 'bg-emerald-50 border-emerald-200' },
   'Données structurées': { icon: Code2, label: 'Données structurées', color: 'text-rose-600', bg: 'bg-rose-50 border-rose-200' },
+  'Analyse des titles': { icon: Type, label: 'Analyse des titles', color: 'text-blue-600', bg: 'bg-blue-50 border-blue-200' },
+  'Profondeur de contenu': { icon: BookOpen, label: 'Profondeur de contenu', color: 'text-violet-600', bg: 'bg-violet-50 border-violet-200' },
+  'Points clés': { icon: Lightbulb, label: 'Points clés', color: 'text-brand', bg: 'bg-brand/5 border-brand/20' },
 };
 
 interface ParsedSection {
@@ -311,13 +315,29 @@ function MovementBadge({ analysis }: { analysis: Analysis }) {
 export function AnalysesPage() {
   const [analyses, setAnalyses] = useState<Analysis[]>([]);
   const [runs, setRuns] = useState<Array<{ id: string; run_label: string }>>([]);
-  const [filters, setFilters] = useState({ run_id: '', type: '' });
+  const [filters, setFilters] = useState({ run_id: '', type: '', keyword_id: '', device: '' });
+  const [keywords, setKeywords] = useState<Array<{ id: string; keyword: string }>>([]);
   const [expanded, setExpanded] = useState<string | null>(null);
 
   useEffect(() => {
     supabase.from('runs').select('id, run_label').order('started_at', { ascending: false })
       .then(({ data }) => setRuns(data || []));
   }, []);
+
+  useEffect(() => {
+    if (!filters.run_id) return;
+    supabase
+      .from('analyses')
+      .select('keyword_id, keywords!inner(keyword)')
+      .eq('run_id', filters.run_id)
+      .then(({ data }) => {
+        const unique = new Map<string, string>();
+        for (const a of data || []) {
+          unique.set(a.keyword_id, (a as any).keywords.keyword);
+        }
+        setKeywords([...unique.entries()].map(([id, keyword]) => ({ id, keyword })));
+      });
+  }, [filters.run_id]);
 
   useEffect(() => {
     if (!filters.run_id) return;
@@ -328,12 +348,15 @@ export function AnalysesPage() {
       .order('created_at');
 
     if (filters.type) query = query.eq('analysis_type', filters.type);
+    if (filters.keyword_id) query = query.eq('keyword_id', filters.keyword_id);
+    if (filters.device) query = query.eq('device', filters.device);
 
     query.then(({ data }) => setAnalyses(data || []));
   }, [filters]);
 
   const gapCount = analyses.filter((a) => a.analysis_type === 'lacoste_gap').length;
   const movementCount = analyses.filter((a) => a.analysis_type === 'position_movement').length;
+  const deepDiveCount = analyses.filter((a) => a.analysis_type === 'top3_deep_dive').length;
 
   return (
     <div>
@@ -384,6 +407,57 @@ export function AnalysesPage() {
             >
               <TrendingUp size={12} /> Movements ({movementCount})
             </button>
+            <button
+              onClick={() => setFilters({ ...filters, type: 'top3_deep_dive' })}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                filters.type === 'top3_deep_dive' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-700'
+              }`}
+            >
+              <Crosshair size={12} /> Deep Dive ({deepDiveCount})
+            </button>
+          </div>
+
+          {/* Keyword filter */}
+          <div className="relative">
+            <select
+              value={filters.keyword_id}
+              onChange={(e) => setFilters({ ...filters, keyword_id: e.target.value })}
+              className="appearance-none bg-zinc-50 border border-zinc-200 rounded-lg px-4 py-2 pr-8 text-sm font-medium text-zinc-700 hover:border-zinc-300 transition-colors"
+            >
+              <option value="">All keywords</option>
+              {keywords.map((kw) => (
+                <option key={kw.id} value={kw.id}>{kw.keyword}</option>
+              ))}
+            </select>
+            <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" />
+          </div>
+
+          {/* Device filter */}
+          <div className="flex items-center gap-1 bg-zinc-50 border border-zinc-200 rounded-lg p-1">
+            <button
+              onClick={() => setFilters({ ...filters, device: '' })}
+              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                !filters.device ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-700'
+              }`}
+            >
+              All
+            </button>
+            <button
+              onClick={() => setFilters({ ...filters, device: 'desktop' })}
+              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                filters.device === 'desktop' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-700'
+              }`}
+            >
+              Desktop
+            </button>
+            <button
+              onClick={() => setFilters({ ...filters, device: 'mobile' })}
+              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                filters.device === 'mobile' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-700'
+              }`}
+            >
+              Mobile
+            </button>
           </div>
         </div>
       </div>
@@ -397,13 +471,16 @@ export function AnalysesPage() {
         <div className="space-y-3">
           {analyses.map((a) => {
             const isGap = a.analysis_type === 'lacoste_gap';
+            const isDeepDive = a.analysis_type === 'top3_deep_dive';
             const isExpanded = expanded === a.id;
 
             return (
               <div
                 key={a.id}
                 className={`bg-white rounded-xl border overflow-hidden transition-all ${
-                  isGap ? 'border-l-4 border-l-brand border-zinc-200' : 'border-l-4 border-l-amber-400 border-zinc-200'
+                  isGap ? 'border-l-4 border-l-brand border-zinc-200' :
+                  isDeepDive ? 'border-l-4 border-l-violet-500 border-zinc-200' :
+                  'border-l-4 border-l-amber-400 border-zinc-200'
                 }`}
               >
                 <button
@@ -435,6 +512,15 @@ export function AnalysesPage() {
                           </span>
                         )
                       )}
+                      {isGap && a.opportunity_score && (
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                          a.opportunity_score >= 7 ? 'bg-emerald-50 text-emerald-700' :
+                          a.opportunity_score >= 4 ? 'bg-amber-50 text-amber-700' :
+                          'bg-red-50 text-red-600'
+                        }`}>
+                          Potentiel: {a.opportunity_score}/10
+                        </span>
+                      )}
                       {!isGap && a.actor && (
                         <span className="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full font-medium">
                           {a.actor}
@@ -452,6 +538,8 @@ export function AnalysesPage() {
                     ))}
                     {isGap ? (
                       <Target size={14} className="text-brand ml-1" />
+                    ) : isDeepDive ? (
+                      <Crosshair size={14} className="text-violet-500 ml-1" />
                     ) : (
                       <TrendingUp size={14} className="text-amber-500 ml-1" />
                     )}
