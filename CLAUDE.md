@@ -25,12 +25,18 @@ supabase/      → Migrations, RLS policies, Edge Functions
 ### Pipeline (`pipeline/`)
 - Entry point: `pipeline/run.ts` — orchestrates 5 sequential steps
 - Each step is a standalone module: `collect-serp.ts`, `scrape.ts`, `classify.ts`, `analyze-gap.ts`, `analyze-movement.ts`
+- **SERP collection** fetches 50 results (5 pages of 10). Analysis runs on top 20, deep dive on top 3
+- **Two-level analysis** in `analyze-gap.ts`:
+  - **Global analysis** (`lacoste_gap`): top 20 overview with opportunity score
+  - **Deep dive** (`top3_deep_dive`): detailed top 3 analysis. Compares with Lacoste only if present in top 50
+- `pipeline/lib/keyword-counter.ts` — counts keyword occurrences in text, headings, H1 (injected into LLM context)
 - LLM abstraction in `pipeline/lib/llm.ts` — tries Ollama first, falls back to cloud
-- All prompts in `pipeline/prompts/` — French, JSON-only output
+- All prompts in `pipeline/prompts/` — French, JSON-only output, with strict guardrails (no hallucination on unobservable data)
 - Logs every step to `run_logs` table (consumed by dashboard via Realtime)
 
 ### Database (Supabase)
-- 6 tables: `keywords`, `runs`, `serp_results`, `snapshots`, `analyses`, `run_logs`
+- 6 tables: `keywords`, `runs`, `serp_results` (positions 1-50), `snapshots`, `analyses` (with `opportunity_score` 1-10), `run_logs`
+- Legacy tables: `lacoste_pages`, `lacoste_snapshots` (referentiel system — disconnected, code preserved)
 - RLS: anon = read-only, service_role = full access
 - Realtime enabled on `runs` and `run_logs`
 
@@ -81,7 +87,7 @@ Or via GitHub Actions: set the `resume_run_id` input field when triggering manua
 
 Resume is fully idempotent — the pipeline auto-detects completed steps:
 - **Classification**: skipped if `serp_results.actor_name` already populated
-- **Gap analysis**: skips keyword/country/device combos that already have an `analyses` row
+- **Gap analysis**: skips keyword/country/device combos that already have an `analyses` row (both `lacoste_gap` and `top3_deep_dive`)
 
 ## Conventions
 
@@ -100,15 +106,15 @@ LLM responses (especially from small models like ministral-3:14b) often contain 
 - Type coercion via `str()` helper — never trust LLM field types (may return objects instead of strings)
 - `lacoste_position` is sourced from SERP data, NOT from LLM output (LLM may return "absent" as string)
 
-## Gap Analysis Content Format
+## Analysis Content Formats
 
-Analyses are stored as structured markdown in the `content` field:
+### Global analysis (`lacoste_gap`)
 ```
 ### Alignement intention
-{text}
+{text — must mention keyword presence in <title>}
 
 ### Couverture sémantique
-{text}
+{text — must reference KEYWORD DENSITY metrics}
 
 ### Structure
 {text}
@@ -124,13 +130,34 @@ Analyses are stored as structured markdown in the `content` field:
 2. {reco}
 ```
 
-The dashboard parses this format and renders it as collapsible sections with color-coded icons.
+### Deep dive (`top3_deep_dive`)
+```
+### Analyse des titles
+{text — exact titles cited}
+
+### Profondeur de contenu
+{text — keyword counts, word counts}
+
+### Structure
+{text}
+
+### Données structurées
+{text}
+
+### Optimisation meta
+{text}
+
+## Points clés
+1. {takeaway}
+2. {takeaway}
+```
+
+The dashboard parses these formats and renders them as collapsible sections with color-coded icons. Deep dive cards have a violet left border.
 
 ## Known Limitations
 
 - **Movement analysis** is disabled — requires multi-run history (code exists in `analyze-movement.ts`, commented out in `run.ts`)
 - **Device filtering** in SERP collection is not supported by Google CSE — desktop/mobile store identical results
-- **Edge Functions** (`trigger-run`, `manage-keywords`) are defined but not yet deployed to Supabase
 - **Gap analysis** processes keywords one at a time (batch_size=1) due to LLM context constraints with ministral-3:14b
 - **Classification quality** with ministral-3:14b is ~85% on actor_category — inconsistencies between desktop/mobile for same URL, some boutiques misclassified as brands
-- **Lacoste absent from SERP**: When Lacoste is not in the top 20, the pipeline currently has no Lacoste page to compare. A Lacoste sitemap reference system is designed (see `docs/superpowers/specs/2026-03-24-lacoste-reference-and-links-design.md`) but not yet implemented
+- **Lacoste absent from top 50**: When Lacoste is not in the top 50 Google results, the deep dive analysis runs without Lacoste comparison (best practices only). The Lacoste reference system code is preserved but disconnected (in `pipeline/lib/lacoste-matcher.ts`, `pipeline/refresh-sitemap.ts`)
