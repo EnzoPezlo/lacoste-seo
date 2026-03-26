@@ -3,6 +3,7 @@ import { log } from './lib/logger.js';
 import { callLLM } from './lib/llm.js';
 import { ANALYZE_GAP_SYSTEM, analyzeGapUserPrompt } from './prompts/analyze-gap.js';
 import { jsonrepair } from 'jsonrepair';
+import { countKeywordOccurrences } from './lib/keyword-counter.js';
 
 const MAX_RETRIES = 3;
 
@@ -165,6 +166,11 @@ export async function analyzeGap(runId: string): Promise<void> {
               aggregatedContent += `META HEAD: ${snapshot.head_html?.slice(0, 300) || '(no head)'}\n`;
               if (snapshot.structured_data) {
                 aggregatedContent += `STRUCTURED DATA: ${JSON.stringify(snapshot.structured_data).slice(0, 300)}\n`;
+              }
+              // Inject keyword density metrics
+              if (snapshot.markdown_content) {
+                const counts = countKeywordOccurrences(keyword, snapshot.markdown_content);
+                aggregatedContent += `KEYWORD DENSITY ("${keyword}"): ${counts.total} occurrences totales, ${counts.inHeadings} dans les Hn, ${counts.inH1} dans le H1\n`;
               }
               aggregatedContent += `CONTENU MARKDOWN:\n${md}\n\n`;
             } else {
