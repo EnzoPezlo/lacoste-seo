@@ -24,7 +24,7 @@ export async function collectSerpForKeyword(
   // ValueSERP) would be needed. For now, desktop and mobile store the same
   // results but are tracked separately for future upgrade.
 
-  for (const start of [1, 11]) {
+  for (const start of [1, 11, 21, 31, 41]) {
     const params = new URLSearchParams({
       key: config.google.cseKey,
       cx: config.google.cseCx,

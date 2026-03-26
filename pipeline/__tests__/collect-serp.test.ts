@@ -33,7 +33,7 @@ describe('collectSerpForKeyword', () => {
     vi.clearAllMocks();
   });
 
-  it('makes 2 Google API calls (page 1 + page 2) and returns 20 results', async () => {
+  it('makes 5 Google API calls (pages 1-5) and returns 50 results', async () => {
     const makeItems = (start: number) =>
       Array.from({ length: 10 }, (_, i) => ({
         link: `https://example${start + i}.com/page`,
@@ -42,23 +42,20 @@ describe('collectSerpForKeyword', () => {
         snippet: `Snippet ${start + i}`,
       }));
 
-    // Page 1
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ items: makeItems(1) }),
-    });
-    // Page 2
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ items: makeItems(11) }),
-    });
+    // 5 pages of 10 results
+    for (const start of [1, 11, 21, 31, 41]) {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ items: makeItems(start) }),
+      });
+    }
 
     const results = await collectSerpForKeyword('polo shirt', 'US', 'desktop');
 
-    expect(mockFetch).toHaveBeenCalledTimes(2);
-    expect(results).toHaveLength(20);
+    expect(mockFetch).toHaveBeenCalledTimes(5);
+    expect(results).toHaveLength(50);
     expect(results[0].position).toBe(1);
-    expect(results[19].position).toBe(20);
+    expect(results[49].position).toBe(50);
     expect(results[0].domain).toBe('example1.com');
   });
 });
