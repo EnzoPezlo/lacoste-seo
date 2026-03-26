@@ -3,8 +3,6 @@ import { log } from './lib/logger.js';
 import { callLLM } from './lib/llm.js';
 import { ANALYZE_GAP_SYSTEM, analyzeGapUserPrompt } from './prompts/analyze-gap.js';
 import { jsonrepair } from 'jsonrepair';
-import { findLacostePageForKeyword } from './lib/lacoste-matcher.js';
-import { firecrawlScrape, extractStructuredData } from './lib/scrape-utils.js';
 
 const MAX_RETRIES = 3;
 
@@ -41,69 +39,6 @@ interface SourceRef {
   match_method?: 'token' | 'llm';
 }
 
-/** Get a fresh snapshot for a Lacoste reference page, scraping if needed */
-async function getLacostRefSnapshot(url: string): Promise<{
-  markdown_content: string | null;
-  head_html: string | null;
-  structured_data: unknown | null;
-} | null> {
-  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
-
-  // Check lacoste_snapshots cache
-  const { data: cached } = await supabase
-    .from('lacoste_snapshots')
-    .select('markdown_content, head_html, structured_data, scraped_at')
-    .eq('url', url)
-    .single();
-
-  if (cached && cached.scraped_at > thirtyDaysAgo) return cached;
-
-  // Check regular snapshots table (may have been scraped in a SERP run)
-  const { data: serpSnap } = await supabase
-    .from('snapshots')
-    .select('markdown_content, head_html, structured_data, created_at')
-    .eq('url', url)
-    .gt('created_at', thirtyDaysAgo)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .single();
-
-  if (serpSnap) {
-    // Copy to lacoste_snapshots for future use
-    await supabase.from('lacoste_snapshots').upsert({
-      url,
-      markdown_content: serpSnap.markdown_content,
-      head_html: serpSnap.head_html,
-      structured_data: serpSnap.structured_data,
-    }, { onConflict: 'url' });
-    return serpSnap;
-  }
-
-  // Scrape fresh
-  try {
-    const markdownContent = await firecrawlScrape(url, 'markdown');
-    const headHtml = await firecrawlScrape(url, 'rawHtml', { onlyMainContent: false });
-    const headMatch = headHtml.match(/<head[^>]*>([\s\S]*?)<\/head>/i);
-    const headSection = headMatch ? headMatch[0] : headHtml.slice(0, 5000);
-    const structuredData = extractStructuredData(headSection);
-
-    const snapshot = {
-      markdown_content: markdownContent,
-      head_html: headSection,
-      structured_data: structuredData.length > 0 ? structuredData : null,
-    };
-
-    await supabase.from('lacoste_snapshots').upsert({
-      url,
-      ...snapshot,
-    }, { onConflict: 'url' });
-
-    return snapshot;
-  } catch (err) {
-    console.error(`[analyze_gap] Failed to scrape Lacoste ref ${url}:`, (err as Error).message);
-    return null;
-  }
-}
 
 interface GapAnalysisResult {
   keyword: string;
@@ -237,33 +172,9 @@ export async function analyzeGap(runId: string): Promise<void> {
             }
           }
 
-          // If Lacoste absent, find and inject reference page
+          // If Lacoste absent from this SERP, note it (no reference injection)
           if (!lacostePosResult) {
-            const match = await findLacostePageForKeyword(keyword, country);
-            if (match) {
-              const refSnapshot = await getLacostRefSnapshot(match.url);
-              batchSources.push({
-                position: 'lacoste_ref',
-                domain: 'lacoste.com',
-                actor_name: 'Lacoste',
-                url: match.url,
-                match_method: match.matchMethod,
-              });
-
-              aggregatedContent += `--- LACOSTE (Absent du Top 20 — page la plus pertinente : ${match.url}) ---\n`;
-              if (refSnapshot) {
-                const md = refSnapshot.markdown_content?.slice(0, 1500) || '(no content)';
-                aggregatedContent += `META HEAD: ${refSnapshot.head_html?.slice(0, 300) || '(no head)'}\n`;
-                if (refSnapshot.structured_data) {
-                  aggregatedContent += `STRUCTURED DATA: ${JSON.stringify(refSnapshot.structured_data).slice(0, 300)}\n`;
-                }
-                aggregatedContent += `CONTENU MARKDOWN:\n${md}\n\n`;
-              } else {
-                aggregatedContent += `(scraping en erreur)\n\n`;
-              }
-            } else {
-              aggregatedContent += `--- LACOSTE : aucune page pertinente trouvée sur lacoste.com ---\n\n`;
-            }
+            aggregatedContent += `--- LACOSTE : absente du Top 50 pour ce mot-clé ---\n\n`;
           }
         }
 
