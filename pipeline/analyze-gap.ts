@@ -1,7 +1,7 @@
 import { supabase } from './lib/supabase.js';
 import { log } from './lib/logger.js';
 import { callLLM } from './lib/llm.js';
-import { ANALYZE_GAP_SYSTEM, analyzeGapUserPrompt } from './prompts/analyze-gap.js';
+import { ANALYZE_GAP_SYSTEM, analyzeGapUserPrompt, DEEP_DIVE_SYSTEM, deepDiveUserPrompt } from './prompts/analyze-gap.js';
 import { jsonrepair } from 'jsonrepair';
 import { countKeywordOccurrences } from './lib/keyword-counter.js';
 
@@ -53,6 +53,20 @@ interface GapAnalysisResult {
   meta_gap: string;
   schema_gap: string;
   recommendations: string[];
+  tags: string[];
+  opportunity_score: number;
+}
+
+interface DeepDiveResult {
+  keyword: string;
+  country: string;
+  device: string;
+  title_analysis: string;
+  content_depth_analysis: string;
+  structure_analysis: string;
+  structured_data_analysis: string;
+  meta_analysis: string;
+  key_takeaways: string[];
   tags: string[];
 }
 
@@ -265,6 +279,8 @@ export async function analyzeGap(runId: string): Promise<void> {
             lacoste_position: lacostePosition,
             search_intent: searchIntent,
             sources: batchSources,
+            opportunity_score: typeof analysis.opportunity_score === 'number'
+              ? Math.min(10, Math.max(1, analysis.opportunity_score)) : null,
           });
 
           if (insertError) {
@@ -294,6 +310,168 @@ export async function analyzeGap(runId: string): Promise<void> {
       }
     }
   }
+
+  // === DEEP DIVE: Top 3 analysis ===
+  await log(runId, 'analyze_gap', 'running', 'Starting Top 3 deep dive analysis');
+
+  let deepDiveCount = 0;
+
+  for (const item of toAnalyze) {
+    const [keywordId, country, device] = item.key.split('|');
+    const keyword = item.keyword.keyword;
+
+    // Check if deep dive already done for this combo
+    const { data: existingDeep } = await supabase
+      .from('analyses')
+      .select('id')
+      .eq('run_id', runId)
+      .eq('keyword_id', keywordId)
+      .eq('country', country)
+      .eq('device', device)
+      .eq('analysis_type', 'top3_deep_dive')
+      .limit(1);
+
+    if (existingDeep && existingDeep.length > 0) continue;
+
+    // Determine if Lacoste is in the top 50
+    const lacostePosResult = item.results.find((r) => r.is_lacoste);
+    const hasLacoste = !!lacostePosResult;
+
+    // Build content for top 3 + optionally Lacoste (more content per page: 3000 chars)
+    let deepContent = `\n=== MOT-CLÉ : ${keyword} | PAYS : ${country} | DEVICE : ${device} ===\n\n`;
+    const top3 = item.results.filter((r) => r.position <= 3);
+    const deepSources: SourceRef[] = [];
+
+    for (const result of top3) {
+      const { data: snapshot } = await supabase
+        .from('snapshots')
+        .select('markdown_content, head_html, structured_data')
+        .eq('run_id', runId)
+        .eq('url', result.url)
+        .single();
+
+      const label = `Position ${result.position} : ${result.domain} (${result.url})`;
+      deepSources.push({
+        position: result.position,
+        domain: result.domain,
+        actor_name: result.actor_name || result.domain,
+        url: result.url,
+      });
+
+      deepContent += `--- ${label} ---\n`;
+      if (snapshot) {
+        const md = snapshot.markdown_content?.slice(0, 3000) || '(no content)';
+        deepContent += `META HEAD: ${snapshot.head_html?.slice(0, 500) || '(no head)'}\n`;
+        if (snapshot.structured_data) {
+          deepContent += `STRUCTURED DATA: ${JSON.stringify(snapshot.structured_data).slice(0, 500)}\n`;
+        }
+        if (snapshot.markdown_content) {
+          const counts = countKeywordOccurrences(keyword, snapshot.markdown_content);
+          deepContent += `KEYWORD DENSITY ("${keyword}"): ${counts.total} total, ${counts.inHeadings} Hn, ${counts.inH1} H1\n`;
+        }
+        deepContent += `CONTENU MARKDOWN:\n${md}\n\n`;
+      } else {
+        deepContent += `(snapshot non disponible)\n\n`;
+      }
+    }
+
+    // Add Lacoste page if present in top 50
+    if (hasLacoste) {
+      const lacResult = lacostePosResult!;
+      const { data: lacSnapshot } = await supabase
+        .from('snapshots')
+        .select('markdown_content, head_html, structured_data')
+        .eq('run_id', runId)
+        .eq('url', lacResult.url)
+        .single();
+
+      deepSources.push({
+        position: lacResult.position,
+        domain: lacResult.domain,
+        actor_name: 'Lacoste',
+        url: lacResult.url,
+      });
+
+      deepContent += `--- LACOSTE (Position ${lacResult.position}) — ${lacResult.url} ---\n`;
+      if (lacSnapshot) {
+        const md = lacSnapshot.markdown_content?.slice(0, 3000) || '(no content)';
+        deepContent += `META HEAD: ${lacSnapshot.head_html?.slice(0, 500) || '(no head)'}\n`;
+        if (lacSnapshot.structured_data) {
+          deepContent += `STRUCTURED DATA: ${JSON.stringify(lacSnapshot.structured_data).slice(0, 500)}\n`;
+        }
+        if (lacSnapshot.markdown_content) {
+          const counts = countKeywordOccurrences(keyword, lacSnapshot.markdown_content);
+          deepContent += `KEYWORD DENSITY ("${keyword}"): ${counts.total} total, ${counts.inHeadings} Hn, ${counts.inH1} H1\n`;
+        }
+        deepContent += `CONTENU MARKDOWN:\n${md}\n\n`;
+      }
+    }
+
+    // Call LLM for deep dive
+    try {
+      const prompt = deepDiveUserPrompt(deepContent, hasLacoste);
+      let deepAnalyses: DeepDiveResult[] | null = null;
+      let lastError = '';
+
+      for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        try {
+          const response = await callLLM({
+            task: 'deep_dive_top3',
+            prompt,
+            systemPrompt: DEEP_DIVE_SYSTEM,
+            temperature: 0.2 + (attempt - 1) * 0.1,
+            maxTokens: 4000,
+          });
+          deepAnalyses = parseLLMJsonArray<DeepDiveResult>(response);
+          break;
+        } catch (parseError) {
+          lastError = (parseError as Error).message;
+          if (attempt < MAX_RETRIES) continue;
+        }
+      }
+
+      if (!deepAnalyses) {
+        console.error(`[deep_dive] All retries failed for "${keyword}"`);
+        continue;
+      }
+
+      for (const analysis of deepAnalyses) {
+        const str = (v: unknown): string =>
+          typeof v === 'string' ? v : typeof v === 'object' && v ? JSON.stringify(v) : String(v ?? '');
+
+        const takeaways = (Array.isArray(analysis.key_takeaways) ? analysis.key_takeaways : [])
+          .map((t: unknown, idx: number) => `${idx + 1}. ${str(t)}`)
+          .join('\n');
+
+        const content = `### Analyse des titles\n${str(analysis.title_analysis)}\n\n### Profondeur de contenu\n${str(analysis.content_depth_analysis)}\n\n### Structure\n${str(analysis.structure_analysis)}\n\n### Données structurées\n${str(analysis.structured_data_analysis)}\n\n### Optimisation meta\n${str(analysis.meta_analysis)}\n\n## Points clés\n${takeaways}`;
+
+        const tags = Array.isArray(analysis.tags)
+          ? analysis.tags.filter((t: unknown) => typeof t === 'string') : [];
+
+        const { error: insertError } = await supabase.from('analyses').insert({
+          run_id: runId,
+          keyword_id: keywordId,
+          country,
+          device,
+          analysis_type: 'top3_deep_dive',
+          content,
+          tags,
+          lacoste_position: lacostePosResult?.position ?? null,
+          sources: deepSources,
+        });
+
+        if (insertError) {
+          console.error(`[deep_dive] Insert failed for "${keyword}":`, insertError.message);
+          continue;
+        }
+        deepDiveCount++;
+      }
+    } catch (error) {
+      console.error(`[deep_dive] Error for "${keyword}":`, (error as Error).message);
+    }
+  }
+
+  await log(runId, 'analyze_gap', 'running', `Deep dive complete: ${deepDiveCount} analyses`);
 
   await log(
     runId,
