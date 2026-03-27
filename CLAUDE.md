@@ -46,7 +46,9 @@ supabase/      → Migrations, RLS policies, Edge Functions
 npm run dev          # Start Vite dev server (localhost:5173)
 npm run build        # Build dashboard for production
 npm test             # Run vitest tests
-npx tsx pipeline/run.ts   # Run full pipeline locally
+npx tsx pipeline/run.ts                # Run full pipeline locally
+npx tsx pipeline/claude-reanalyze.ts   # Duplicate a run's SERP + extract analysis contexts
+npx tsx pipeline/insert-claude-analyses.ts  # Insert programmatic analyses from contexts
 ```
 
 ## Environment Variables
@@ -156,6 +158,7 @@ The dashboard parses these formats and renders them as collapsible sections with
 
 ## Known Limitations
 
+- **Pipeline timeout**: GitHub Actions workflow has `timeout-minutes: 120`. Scraping 400+ URLs takes ~1h, so fresh runs need the full 2h. Resume runs skip SERP+scrape and finish in ~55min.
 - **Movement analysis** is disabled — requires multi-run history (code exists in `analyze-movement.ts`, commented out in `run.ts`)
 - **Device filtering** in SERP collection is not supported by Google CSE — desktop/mobile store identical results
 - **Gap analysis** processes keywords one at a time (batch_size=1) due to LLM context constraints with ministral-3:14b

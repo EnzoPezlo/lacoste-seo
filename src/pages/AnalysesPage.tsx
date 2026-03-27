@@ -50,6 +50,104 @@ interface ParsedSection {
   content: string;
 }
 
+/**
+ * Normalize section content: handle JSON objects from small LLMs (Ollama/ministral)
+ * and ensure proper line breaks for readability.
+ */
+function normalizeContent(raw: string): string {
+  const trimmed = raw.trim();
+
+  // Detect JSON array or object content (Ollama often returns objects instead of strings)
+  if (/^\[?\{/.test(trimmed) && /\}]?$/.test(trimmed)) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      return jsonToMarkdown(parsed);
+    } catch {
+      // Not valid JSON, continue with text normalization
+    }
+  }
+
+  // Text normalization: add line breaks before "Pos#N" or "Pos #N" patterns
+  // so each position entry appears on its own line
+  let text = trimmed
+    .replace(/(?<!\n)\s*(Pos[#\s]?\d+)/g, '\n$1')
+    .replace(/(?<!\n)\s*(Lacoste\s*:)/g, '\n$1')
+    .replace(/^\n/, ''); // remove leading newline if added
+
+  return text;
+}
+
+/** Convert JSON objects/arrays from LLM into readable markdown */
+function jsonToMarkdown(data: unknown): string {
+  if (typeof data === 'string') return data;
+  if (Array.isArray(data)) {
+    return data.map((item) => jsonToMarkdown(item)).join('\n\n');
+  }
+  if (typeof data === 'object' && data !== null) {
+    const obj = data as Record<string, unknown>;
+
+    // Handle common Ollama patterns: {concurrents: [...], lacoste: {...}}
+    const lines: string[] = [];
+
+    // Process "concurrents" array if present
+    if (Array.isArray(obj.concurrents)) {
+      for (const c of obj.concurrents) {
+        if (typeof c === 'object' && c !== null) {
+          const cc = c as Record<string, unknown>;
+          const site = cc.site || cc.domain || cc.actor_name || '';
+          const parts: string[] = [];
+          if (site) parts.push(`**${site}**`);
+          // Collect all text-like fields
+          for (const [key, val] of Object.entries(cc)) {
+            if (['site', 'domain', 'actor_name'].includes(key)) continue;
+            if (typeof val === 'string' && val.length > 0) {
+              parts.push(`${val}`);
+            } else if (typeof val === 'number') {
+              parts.push(`${key}: ${val}`);
+            }
+          }
+          lines.push(`- ${parts.join(' — ')}`);
+        }
+      }
+    }
+
+    // Process "lacoste" object if present
+    if (obj.lacoste && typeof obj.lacoste === 'object') {
+      const lac = obj.lacoste as Record<string, unknown>;
+      const parts: string[] = ['**Lacoste**'];
+      for (const [key, val] of Object.entries(lac)) {
+        if (typeof val === 'string' && val.length > 0) {
+          parts.push(`${val}`);
+        } else if (typeof val === 'number') {
+          parts.push(`${key}: ${val}`);
+        }
+      }
+      lines.push(`- ${parts.join(' — ')}`);
+    }
+
+    // If no known pattern, format all key-value pairs
+    if (lines.length === 0) {
+      for (const [key, val] of Object.entries(obj)) {
+        if (typeof val === 'string') {
+          lines.push(`**${key}** : ${val}`);
+        } else if (typeof val === 'number' || typeof val === 'boolean') {
+          lines.push(`**${key}** : ${val}`);
+        } else if (Array.isArray(val)) {
+          lines.push(`**${key}** :`);
+          for (const item of val) {
+            lines.push(`- ${typeof item === 'string' ? item : JSON.stringify(item)}`);
+          }
+        } else if (typeof val === 'object' && val !== null) {
+          lines.push(`**${key}** : ${jsonToMarkdown(val)}`);
+        }
+      }
+    }
+
+    return lines.join('\n');
+  }
+  return String(data);
+}
+
 function parseAnalysisContent(content: string): { sections: ParsedSection[]; recommendations: string[] } {
   const sections: ParsedSection[] = [];
   const recommendations: string[] = [];
@@ -62,13 +160,13 @@ function parseAnalysisContent(content: string): { sections: ParsedSection[]; rec
     const title = lines[0].trim();
     const body = lines.slice(1).join('\n').trim();
 
-    if (title === 'Recommandations') {
+    if (title === 'Recommandations' || title === 'Points clés') {
       const recos = body.split('\n').filter(l => l.trim());
       for (const r of recos) {
         recommendations.push(r.replace(/^\d+\.\s*/, '').trim());
       }
     } else if (body) {
-      sections.push({ title, content: body });
+      sections.push({ title, content: normalizeContent(body) });
     }
   }
 

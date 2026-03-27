@@ -250,9 +250,35 @@ export async function analyzeGap(runId: string): Promise<void> {
 
           const [keywordId, country, device] = matchingItem.key.split('|');
 
-          // Coerce fields: LLM may return objects instead of strings, or "absent" instead of null
-          const str = (v: unknown): string =>
-            typeof v === 'string' ? v : typeof v === 'object' && v ? JSON.stringify(v) : String(v ?? '');
+          // Coerce fields: LLM may return objects/arrays instead of strings, or "absent" instead of null
+          const str = (v: unknown): string => {
+            if (typeof v === 'string') return v;
+            if (Array.isArray(v)) {
+              return v.map((item, i) => {
+                if (typeof item === 'string') return `- ${item}`;
+                if (typeof item === 'object' && item) {
+                  const o = item as Record<string, unknown>;
+                  const site = o.site || o.domain || o.actor_name || '';
+                  const fields = Object.entries(o)
+                    .filter(([k]) => !['site', 'domain', 'actor_name'].includes(k))
+                    .map(([, val]) => typeof val === 'string' ? val : '')
+                    .filter(Boolean);
+                  return `- **${site}** : ${fields.join(' — ')}`;
+                }
+                return `- ${String(item)}`;
+              }).join('\n');
+            }
+            if (typeof v === 'object' && v) {
+              const o = v as Record<string, unknown>;
+              return Object.entries(o)
+                .map(([key, val]) => {
+                  if (Array.isArray(val)) return `**${key}** :\n${str(val)}`;
+                  return `**${key}** : ${typeof val === 'string' ? val : String(val ?? '')}`;
+                })
+                .join('\n');
+            }
+            return String(v ?? '');
+          };
           const recoList = (Array.isArray(analysis.recommendations) ? analysis.recommendations : [])
             .map((r: unknown, idx: number) => `${idx + 1}. ${str(r)}`)
             .join('\n');
@@ -436,8 +462,34 @@ export async function analyzeGap(runId: string): Promise<void> {
       }
 
       for (const analysis of deepAnalyses) {
-        const str = (v: unknown): string =>
-          typeof v === 'string' ? v : typeof v === 'object' && v ? JSON.stringify(v) : String(v ?? '');
+        const str = (v: unknown): string => {
+          if (typeof v === 'string') return v;
+          if (Array.isArray(v)) {
+            return v.map((item) => {
+              if (typeof item === 'string') return `- ${item}`;
+              if (typeof item === 'object' && item) {
+                const o = item as Record<string, unknown>;
+                const site = o.site || o.domain || o.actor_name || '';
+                const fields = Object.entries(o)
+                  .filter(([k]) => !['site', 'domain', 'actor_name'].includes(k))
+                  .map(([, val]) => typeof val === 'string' ? val : '')
+                  .filter(Boolean);
+                return `- **${site}** : ${fields.join(' — ')}`;
+              }
+              return `- ${String(item)}`;
+            }).join('\n');
+          }
+          if (typeof v === 'object' && v) {
+            const o = v as Record<string, unknown>;
+            return Object.entries(o)
+              .map(([key, val]) => {
+                if (Array.isArray(val)) return `**${key}** :\n${str(val)}`;
+                return `**${key}** : ${typeof val === 'string' ? val : String(val ?? '')}`;
+              })
+              .join('\n');
+          }
+          return String(v ?? '');
+        };
 
         const takeaways = (Array.isArray(analysis.key_takeaways) ? analysis.key_takeaways : [])
           .map((t: unknown, idx: number) => `${idx + 1}. ${str(t)}`)
