@@ -5,6 +5,41 @@ import { ANALYZE_GAP_SYSTEM, analyzeGapUserPrompt, DEEP_DIVE_SYSTEM, deepDiveUse
 import { jsonrepair } from 'jsonrepair';
 import { countKeywordOccurrences } from './lib/keyword-counter.js';
 
+/** Summarize structured data schemas into a concise, LLM-friendly string */
+function summarizeStructuredData(sd: unknown): string {
+  if (!sd) return '';
+  const schemas = Array.isArray(sd) ? sd : [sd];
+  const types: string[] = [];
+  for (const schema of schemas) {
+    if (typeof schema !== 'object' || schema === null) continue;
+    const s = schema as Record<string, unknown>;
+    const type = s['@type'] || (Array.isArray(s['@graph']) ? 'graph' : 'unknown');
+
+    if (Array.isArray(s['@graph'])) {
+      // Expand @graph entries
+      for (const node of s['@graph']) {
+        if (typeof node === 'object' && node !== null) {
+          const n = node as Record<string, unknown>;
+          const nType = String(n['@type'] || 'unknown');
+          const details: string[] = [nType];
+          if (n.aggregateRating) details.push('with ratings');
+          if (n.offers || n.hasOfferCatalog) details.push('with offers');
+          if (n.review) details.push('with reviews');
+          types.push(details.join(' '));
+        }
+      }
+    } else {
+      const details: string[] = [String(type)];
+      if (s.aggregateRating) details.push('with ratings');
+      if (s.offers || s.hasOfferCatalog) details.push('with offers');
+      if (s.review) details.push('with reviews');
+      if (s.itemListElement) details.push(`(${(s.itemListElement as unknown[]).length} items)`);
+      types.push(details.join(' '));
+    }
+  }
+  return types.length > 0 ? types.join(', ') : 'structured data present (format non reconnu)';
+}
+
 const MAX_RETRIES = 3;
 
 /**
@@ -179,7 +214,7 @@ export async function analyzeGap(runId: string): Promise<void> {
               const md = snapshot.markdown_content?.slice(0, 1500) || '(no content)';
               aggregatedContent += `META HEAD: ${snapshot.head_html?.slice(0, 300) || '(no head)'}\n`;
               if (snapshot.structured_data) {
-                aggregatedContent += `STRUCTURED DATA: ${JSON.stringify(snapshot.structured_data).slice(0, 300)}\n`;
+                aggregatedContent += `STRUCTURED DATA: ${summarizeStructuredData(snapshot.structured_data)}\n`;
               }
               // Inject keyword density metrics
               if (snapshot.markdown_content) {
@@ -211,7 +246,7 @@ export async function analyzeGap(runId: string): Promise<void> {
               prompt,
               systemPrompt: ANALYZE_GAP_SYSTEM,
               temperature: 0.2 + (attempt - 1) * 0.1, // slightly increase temp on retries
-              maxTokens: 4000,
+              maxTokens: 8000,
             });
 
             analyses = parseLLMJsonArray<GapAnalysisResult>(response);
@@ -389,7 +424,7 @@ export async function analyzeGap(runId: string): Promise<void> {
         const md = snapshot.markdown_content?.slice(0, 3000) || '(no content)';
         deepContent += `META HEAD: ${snapshot.head_html?.slice(0, 500) || '(no head)'}\n`;
         if (snapshot.structured_data) {
-          deepContent += `STRUCTURED DATA: ${JSON.stringify(snapshot.structured_data).slice(0, 500)}\n`;
+          deepContent += `STRUCTURED DATA: ${summarizeStructuredData(snapshot.structured_data)}\n`;
         }
         if (snapshot.markdown_content) {
           const counts = countKeywordOccurrences(keyword, snapshot.markdown_content);
@@ -423,7 +458,7 @@ export async function analyzeGap(runId: string): Promise<void> {
         const md = lacSnapshot.markdown_content?.slice(0, 3000) || '(no content)';
         deepContent += `META HEAD: ${lacSnapshot.head_html?.slice(0, 500) || '(no head)'}\n`;
         if (lacSnapshot.structured_data) {
-          deepContent += `STRUCTURED DATA: ${JSON.stringify(lacSnapshot.structured_data).slice(0, 500)}\n`;
+          deepContent += `STRUCTURED DATA: ${summarizeStructuredData(lacSnapshot.structured_data)}\n`;
         }
         if (lacSnapshot.markdown_content) {
           const counts = countKeywordOccurrences(keyword, lacSnapshot.markdown_content);

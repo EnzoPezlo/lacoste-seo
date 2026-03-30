@@ -1,6 +1,6 @@
 import { config } from './config.js';
 
-export type LLMTask = 'classify' | 'analyze_gap' | 'analyze_movement';
+export type LLMTask = 'classify' | 'analyze_gap' | 'analyze_movement' | 'deep_dive_top3';
 
 interface CallLLMOptions {
   task: LLMTask;
