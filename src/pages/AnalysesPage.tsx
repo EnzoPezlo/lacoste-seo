@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { supabase } from '../lib/supabase';
-import { Target, TrendingUp, ChevronDown, ChevronRight, BarChart3, AlertTriangle, ArrowUpRight, ArrowDownRight, Minus, Crosshair, BookOpen, LayoutList, Type, Code2, Lightbulb, Search } from 'lucide-react';
+import { Target, TrendingUp, ChevronDown, ChevronRight, BarChart3, AlertTriangle, ArrowUpRight, ArrowDownRight, Minus, Crosshair, BookOpen, LayoutList, Type, Code2, Lightbulb, Search, GitCompare } from 'lucide-react';
 
 interface Analysis {
   id: string;
@@ -417,6 +417,11 @@ export function AnalysesPage() {
   const [keywords, setKeywords] = useState<Array<{ id: string; keyword: string }>>([]);
   const [expanded, setExpanded] = useState<string | null>(null);
 
+  // Compare mode
+  const [compareMode, setCompareMode] = useState(false);
+  const [compareRunId, setCompareRunId] = useState('');
+  const [compareAnalyses, setCompareAnalyses] = useState<Analysis[]>([]);
+
   useEffect(() => {
     supabase.from('runs').select('id, run_label').order('started_at', { ascending: false })
       .then(({ data }) => setRuns(data || []));
@@ -452,30 +457,57 @@ export function AnalysesPage() {
     query.then(({ data }) => setAnalyses(data || []));
   }, [filters]);
 
+  // Fetch compare run analyses
+  useEffect(() => {
+    if (!compareMode || !compareRunId) { setCompareAnalyses([]); return; }
+    let query = supabase
+      .from('analyses')
+      .select('*, keywords!inner(keyword), runs!inner(run_label)')
+      .eq('run_id', compareRunId)
+      .order('created_at');
+
+    if (filters.type) query = query.eq('analysis_type', filters.type);
+    if (filters.keyword_id) query = query.eq('keyword_id', filters.keyword_id);
+    if (filters.device) query = query.eq('device', filters.device);
+
+    query.then(({ data }) => setCompareAnalyses(data || []));
+  }, [compareMode, compareRunId, filters.type, filters.keyword_id, filters.device]);
+
   const gapCount = analyses.filter((a) => a.analysis_type === 'lacoste_gap').length;
   const movementCount = analyses.filter((a) => a.analysis_type === 'position_movement').length;
   const deepDiveCount = analyses.filter((a) => a.analysis_type === 'top3_deep_dive').length;
 
-  // Group analyses by keyword
+  // Labels for compare mode
+  const runALabel = runs.find(r => r.id === filters.run_id)?.run_label || 'Run A';
+  // Group analyses by keyword — merging both runs in compare mode
   const groupedByKeyword = useMemo(() => {
+    const allAnalyses = compareMode && compareRunId
+      ? [...analyses, ...compareAnalyses]
+      : analyses;
     const groups = new Map<string, { keyword: string; analyses: Analysis[] }>();
-    for (const a of analyses) {
+    for (const a of allAnalyses) {
       const kw = (a as any).keywords.keyword;
       if (!groups.has(kw)) groups.set(kw, { keyword: kw, analyses: [] });
       groups.get(kw)!.analyses.push(a);
     }
-    // Sort analyses within each group: gap first, then deep dive, then movement
+    // Sort analyses within each group: by type, then by run, then by country/device
     const typeOrder: Record<string, number> = { lacoste_gap: 0, top3_deep_dive: 1, position_movement: 2 };
     for (const group of groups.values()) {
       group.analyses.sort((a, b) => {
         const ta = typeOrder[a.analysis_type] ?? 3;
         const tb = typeOrder[b.analysis_type] ?? 3;
         if (ta !== tb) return ta - tb;
+        // In compare mode, group same type together, run A first
+        if (compareMode) {
+          const ra = (a as any).runs.run_label === runALabel ? 0 : 1;
+          const rb = (b as any).runs.run_label === runALabel ? 0 : 1;
+          if (ra !== rb) return ra - rb;
+        }
         return `${a.country}-${a.device}`.localeCompare(`${b.country}-${b.device}`);
       });
     }
     return [...groups.values()];
-  }, [analyses]);
+  }, [analyses, compareAnalyses, compareMode, compareRunId, runALabel]);
 
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   // Auto-expand all keyword groups when analyses change
@@ -494,19 +526,46 @@ export function AnalysesPage() {
       {/* Filters */}
       <div className="bg-white rounded-xl border border-zinc-200 p-3 sm:p-4 mb-6">
         <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-          {/* Run selector */}
-          <div className="relative w-full sm:w-auto">
-            <select
-              value={filters.run_id}
-              onChange={(e) => setFilters({ ...filters, run_id: e.target.value })}
-              className="appearance-none w-full sm:w-auto bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-2 pr-8 text-sm font-medium text-zinc-700 hover:border-zinc-300 transition-colors"
+          {/* Run selector + compare toggle */}
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <div className="relative flex-1 sm:flex-initial">
+              <select
+                value={filters.run_id}
+                onChange={(e) => setFilters({ ...filters, run_id: e.target.value })}
+                className={`appearance-none w-full sm:w-auto bg-zinc-50 border rounded-lg px-3 py-2 pr-8 text-sm font-medium text-zinc-700 hover:border-zinc-300 transition-colors ${compareMode ? 'border-blue-300' : 'border-zinc-200'}`}
+              >
+                <option value="">Select a run</option>
+                {runs.map((r) => (
+                  <option key={r.id} value={r.id}>{r.run_label}</option>
+                ))}
+              </select>
+              <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" />
+              {compareMode && <span className="absolute -top-2 -left-1 text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 rounded-full">A</span>}
+            </div>
+            <button
+              onClick={() => { setCompareMode(!compareMode); if (compareMode) { setCompareRunId(''); setCompareAnalyses([]); } }}
+              className={`inline-flex items-center gap-1 px-2.5 py-2 rounded-lg text-xs font-medium transition-colors whitespace-nowrap ${
+                compareMode ? 'bg-blue-100 text-blue-700 border border-blue-300' : 'bg-zinc-100 text-zinc-500 border border-zinc-200 hover:text-zinc-700'
+              }`}
             >
-              <option value="">Select a run</option>
-              {runs.map((r) => (
-                <option key={r.id} value={r.id}>{r.run_label}</option>
-              ))}
-            </select>
-            <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" />
+              <GitCompare size={13} /> {compareMode ? 'On' : 'Compare'}
+            </button>
+            {compareMode && (
+              <div className="relative flex-1 sm:flex-initial">
+                <select
+                  value={compareRunId}
+                  onChange={(e) => setCompareRunId(e.target.value)}
+                  className="appearance-none w-full sm:w-auto bg-zinc-50 border border-violet-300 rounded-lg px-3 py-2 pr-8 text-sm font-medium text-zinc-700 hover:border-violet-400 transition-colors"
+                >
+                  <option value="">Run B...</option>
+                  {runs.filter(r => r.id !== filters.run_id).map((r) => (
+                    <option key={r.id} value={r.id}>{r.run_label}</option>
+                  ))}
+                </select>
+                <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" />
+                <span className="absolute -top-2 -left-1 text-[10px] font-bold text-violet-600 bg-violet-50 px-1.5 rounded-full">B</span>
+              </div>
+            )}
           </div>
 
           {/* Type filter — scrollable on mobile */}
@@ -691,6 +750,15 @@ export function AnalysesPage() {
 
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                                {compareMode && (
+                                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                                    (a as any).runs.run_label === runALabel
+                                      ? 'bg-blue-100 text-blue-700'
+                                      : 'bg-violet-100 text-violet-700'
+                                  }`}>
+                                    {(a as any).runs.run_label === runALabel ? 'A' : 'B'}
+                                  </span>
+                                )}
                                 <span className="font-medium text-sm text-zinc-700">
                                   {isGap ? 'Gap Analysis' : isDeepDive ? 'Deep Dive Top 3' : 'Movement'}
                                 </span>
