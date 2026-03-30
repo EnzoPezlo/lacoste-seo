@@ -20,10 +20,11 @@ Monitor Lacoste's organic search positioning against competitors across strategi
 ┌─────────────────────────────────────────────────────────────┐
 │                     Pipeline (Node.js)                       │
 │                                                             │
-│  ┌──────────┐  ┌────────┐  ┌──────────┐  ┌──────────────┐  │
-│  │ 1. SERP  │→│2.Scrape│→│3.Classify│→│4. Gap Analysis│  │
-│  │ Collect  │  │ Pages  │  │ Actors   │  │  (LLM)       │  │
-│  └──────────┘  └────────┘  └──────────┘  └──────────────┘  │
+│  ┌────────┐ ┌───────┐ ┌─────────┐ ┌──────────┐ ┌──────────┐│
+│  │1. SERP │→│2.Scrap│→│3.Classif│→│4. Gap    │→│5. Move-  ││
+│  │Collect │ │ Pages │ │ Actors  │ │ Analysis │ │ ment (*) ││
+│  │(50 res)│ │       │ │  (LLM)  │ │Global+DD │ │          ││
+│  └────────┘ └───────┘ └─────────┘ └──────────┘ └──────────┘│
 │                                                             │
 │  All steps log to run_logs (realtime → dashboard)           │
 └──────────────────────────┬──────────────────────────────────┘
@@ -32,6 +33,7 @@ Monitor Lacoste's organic search positioning against competitors across strategi
 ┌─────────────────────────────────────────────────────────────┐
 │                   Supabase (PostgreSQL)                      │
 │  keywords | runs | serp_results | snapshots | analyses      │
+│  lacoste_pages | lacoste_snapshots (référentiel)            │
 └──────────────────────────┬──────────────────────────────────┘
                            │ reads from
                            ▼
@@ -66,21 +68,24 @@ Monitor Lacoste's organic search positioning against competitors across strategi
 
 **Process**:
 For each keyword × country × device (desktop, mobile):
-1. Call Google Custom Search API twice:
+1. Call Google Custom Search API five times (5 pages of 10 results):
    - Query 1: positions 1-10 (`start=1`)
    - Query 2: positions 11-20 (`start=11`)
+   - Query 3: positions 21-30 (`start=21`)
+   - Query 4: positions 31-40 (`start=31`)
+   - Query 5: positions 41-50 (`start=41`)
 2. For each result, extract:
-   - `position` (1-20)
+   - `position` (1-50)
    - `url`, `domain`, `title`, `snippet`
    - `is_lacoste` — true if domain contains "lacoste"
 3. Insert into `serp_results` with `serp_status: 'ok'`
 
 **API details**:
 - Endpoint: `https://www.googleapis.com/customsearch/v1`
-- Parameters: `q` (keyword), `gl` (country code), `num=10`, `start` (1 or 11)
+- Parameters: `q` (keyword), `gl` (country code), `num=10`, `start` (1, 11, 21, 31, 41)
 - Rate limit: 100 queries/day on free tier
 
-**Output**: ~20 rows per keyword × country × device in `serp_results` table.
+**Output**: ~50 rows per keyword × country × device in `serp_results` table.
 
 **Status update**: `runs.status → 'serp_done'`
 
@@ -168,21 +173,22 @@ For each group:
 
 ### 3.5 Step 4 — Gap Analysis (`analyze-gap.ts`)
 
-**Purpose**: Explain why Lacoste doesn't rank #1 and recommend improvements.
+**Purpose**: Explain why Lacoste doesn't rank #1 and recommend improvements. Analyse bi-niveau : globale (top 20) + deep dive (top 3).
 
 **Input**: Keyword × country × device combinations where Lacoste is NOT position 1.
 
 **Filtering**:
 - Skip combinations where Lacoste is already #1 (no gap to analyze)
-- Skip combinations where Lacoste is absent from Top 20 (position = 'absent')
+- Skip already-analyzed combinations (idempotent)
 
-**Process**:
+**Process — Analyse globale** (`analysis_type: 'lacoste_gap'`) :
 For each qualifying combination:
 1. Collect page content:
-   - Top 10 results + Lacoste (if present beyond Top 10)
-   - For each: `head_html` (truncated to 300 chars), `structured_data` (300 chars), `markdown_content` (1500 chars)
-2. Build prompt with aggregated content
-3. Call LLM with gap analysis prompt (French)
+   - Top 10 results + Lacoste (if present in top 50)
+   - For each: `head_html` (300 chars), `structured_data` (résumé des schemas JSON-LD), `markdown_content` (1500 chars)
+   - **Keyword density** : comptage automatique des occurrences du mot-clé (total, Hn, H1) via `keyword-counter.ts`
+2. Build prompt with aggregated content (system prompt + user prompt with few-shot examples)
+3. Call LLM with gap analysis prompt (French, JSON output, **paragraphes rédigés de 4-8 phrases**)
 4. LLM returns structured analysis:
 
 ```json
@@ -193,25 +199,41 @@ For each qualifying combination:
     "device": "desktop",
     "search_intent": "transactional",
     "lacoste_position": 4,
-    "diagnostic": "## Alignement d'intention\nLes 3 premiers résultats sont des pages catégorie...\n\n## Couverture sémantique\nLacoste manque de contenu éditorial...",
-    "recommendations": "1. Enrichir la page catégorie avec du contenu éditorial\n2. Ajouter un FAQ structuré...",
-    "tags": ["content_depth", "structure_hn", "faq_missing"]
+    "intent_match": "Les trois premiers résultats intègrent le mot-clé exact...",
+    "content_gap": "L'analyse de la densité du mot-clé révèle un écart notable...",
+    "structure_gap": "Les pages concurrentes du Top 3 adoptent une structure...",
+    "meta_gap": "Le title de **Zalando** place le mot-clé exact en première position...",
+    "schema_gap": "**Zalando** implémente un schema Product complet...",
+    "recommendations": ["Action 1", "Action 2", "Action 3", "Action 4"],
+    "tags": ["meta_title", "content_depth", "structured_data"],
+    "opportunity_score": 7
   }
 ]
 ```
 
 5. Insert into `analyses` table with `analysis_type: 'lacoste_gap'`
 
+**Process — Deep dive top 3** (`analysis_type: 'top3_deep_dive'`) :
+1. Top 3 results + Lacoste (if present) with more content per page (3000 chars)
+2. Analyse comparative approfondie des meilleures pages
+3. Si Lacoste absente du top 50 : analyse des best practices uniquement, sans comparaison Lacoste
+4. Sections : Analyse des titles, Profondeur de contenu, Structure, Données structurées, Optimisation meta + Points clés
+
+**Structured data detection** :
+- `summarizeStructuredData()` parse tous les schemas JSON-LD (Product, BreadcrumbList, AggregateRating, Organization, etc.)
+- Résumé lisible au lieu de JSON tronqué, pour ne pas manquer les schemas multiples
+
 **Analysis dimensions** (on-site only, no backlinks/authority):
-- **Intent alignment**: Does Lacoste's page type match the search intent?
-- **Semantic coverage**: Does content cover the topic as thoroughly as competitors?
-- **HTML structure**: Heading hierarchy (H1-H6), content organization
-- **Meta tags**: Title, description, canonical URL optimization
-- **Structured data**: JSON-LD presence and completeness vs competitors
-- **Editorial UX**: Tables, comparison features, guides, FAQ sections
+- **Intent alignment**: Correspondance mot-clé exact dans le `<title>` et H1
+- **Semantic coverage**: Keyword density comparative (occurrences texte, Hn, H1)
+- **HTML structure**: Hiérarchie Hn, sous-catégories, navigation facettée
+- **Meta tags**: Title, description, longueur, CTA, placement du mot-clé
+- **Structured data**: Présence et type de schemas JSON-LD vs concurrents
+
+**Opportunity score** (1-10) : estime la facilité pour Lacoste de gagner des positions, basé sur les faiblesses des concurrents, la simplicité des actions, et l'écart de position.
 
 **Available tags**:
-`content_depth`, `structure_hn`, `meta_title`, `meta_description`, `structured_data`, `faq_missing`, `internal_linking`, `page_speed`, `editorial_content`, `product_schema`, `breadcrumb`, `image_optimization`
+`structure_hn`, `content_depth`, `content_coverage`, `meta_title`, `meta_description`, `structured_data`, `faq`, `search_intent_mismatch`, `page_type_mismatch`, `editorial_ux`
 
 **Status update**: `runs.status → 'analysis_done'`
 
@@ -271,13 +293,17 @@ On failure:
 
 ### 4.3 Analyses Page (`/analyses`)
 
-**Purpose**: Read LLM-generated SEO analyses.
+**Purpose**: Read and compare LLM-generated SEO analyses.
 
 **Features**:
-- **Filters**: Run selector, analysis type (gap/movement) with live counts
-- **Analysis cards**: Keyword, country, device, Lacoste position, tags, expandable content
-- **Content format**: Markdown with headings (diagnostic + recommendations)
-- **Visual coding**: Green left border for gaps, amber for movements
+- **Regroupement par mot-clé** : analyses organisées par keyword avec sections collapsibles
+- **Filtres** : Run, type d'analyse (gap/deep dive/movement) avec compteurs, mot-clé, device
+- **Comparaison A/B** : toggle "Compare" pour sélectionner 2 runs et voir les analyses côte à côte, avec badges colorés A (bleu) / B (violet)
+- **Sections structurées** : chaque analyse est découpée en sections collapsibles color-coded (Alignement intention, Couverture sémantique, Structure, Meta, Données structurées)
+- **Sources** : section collapsible avec les URLs analysées et leur position SERP
+- **Opportunity score** : badge coloré (vert ≥7, amber ≥4, rouge <4)
+- **Visual coding** : bordure verte pour gaps, violette pour deep dives, amber pour movements
+- **Mobile responsive** : filtres empilés, tags cachés sur petit écran, padding adaptatif
 
 ### 4.4 Keywords Page (`/keywords`)
 
@@ -303,10 +329,25 @@ keywords (1) ←──── (N) serp_results (N) ────→ (1) runs
                          ▼
                     snapshots (1 per URL per run)
 
-runs (1) ←──── (N) analyses
+runs (1) ←──── (N) analyses (with sources JSONB, opportunity_score 1-10)
 runs (1) ←──── (N) run_logs
 keywords (1) ←──── (N) analyses
+
+lacoste_pages ←── lacoste_snapshots   (référentiel Lacoste, déconnecté)
 ```
+
+### Tables principales
+
+| Table | Colonnes clés | Notes |
+|-------|--------------|-------|
+| `keywords` | keyword, category, countries[], active | 7 actifs, 42 prévus |
+| `runs` | run_label, type, status, started_at, finished_at | Statuts : pending → serp_done → scrap_done → analysis_done → completed |
+| `serp_results` | position (1-50), url, domain, is_lacoste, actor_name, actor_category, page_type | 50 résultats par keyword × pays × device |
+| `snapshots` | url, markdown_content, head_html, structured_data (JSONB) | 1 par URL par run |
+| `analyses` | analysis_type, content (markdown), tags[], sources (JSONB), opportunity_score (1-10), lacoste_position | Types : lacoste_gap, top3_deep_dive, position_movement |
+| `run_logs` | step, status, message, metadata | Realtime pour le dashboard |
+| `lacoste_pages` | url, locale, path, page_type, is_new | 335 pages (170 FR, 165 US) — référentiel déconnecté |
+| `lacoste_snapshots` | url, markdown_content, head_html, structured_data | Snapshots des pages Lacoste — déconnecté |
 
 ### Key Relationships
 
@@ -364,11 +405,14 @@ keywords (1) ←──── (N) analyses
 ### Execution Timeline (typical)
 | Step | Duration | Notes |
 |------|----------|-------|
-| SERP Collection | ~2-5 min | Depends on keyword count × countries |
-| Page Scraping | ~5-15 min | ~2-3s per URL, parallelized |
+| SERP Collection | ~5-10 min | 5 pages × keyword count × countries |
+| Page Scraping | ~30-60 min | ~2-3s per URL, ~400 URLs pour 7 keywords |
 | Classification | ~2-5 min | One LLM call per keyword group |
-| Gap Analysis | ~10-30 min | ~3 min per keyword (batch_size=1) |
-| **Total** | **~20-55 min** | Within 60 min GitHub Actions timeout |
+| Gap Analysis (global) | ~15-30 min | ~3 min per keyword (batch_size=1) |
+| Deep Dive (top 3) | ~10-20 min | ~2 min per keyword |
+| **Total** | **~60-120 min** | GitHub Actions timeout: 120 min |
+
+**Resume mode** : `RESUME_RUN_ID=<uuid>` skip SERP + scrape → ~30-55 min.
 
 ---
 
@@ -393,11 +437,25 @@ Keywords are stored in the `keywords` table with:
 
 ---
 
-## 10. Future Roadmap
+## 10. Roadmap
 
-1. **Movement analysis activation** — Once 2+ completed runs exist, enable `analyze-movement.ts` to track ranking changes over time
-2. **Edge Functions deployment** — Deploy `trigger-run` and `manage-keywords` to Supabase so dashboard buttons work end-to-end
-3. **Full keyword activation** — Expand from 7 to 42+ keywords once pipeline is stable
-4. **Better LLM model** — Upgrade from ministral-3:14b to a more capable model for gap analysis accuracy
-5. **Recharts dashboards** — Add trend charts and competitive position visualizations
-6. **Backlink data integration** — Add off-site SEO factors (currently on-site only)
+### Fait (v2 — mars 2026)
+- [x] SERP élargi à 50 résultats (5 pages CSE)
+- [x] Analyse bi-niveau (globale top 20 + deep dive top 3)
+- [x] Keyword density injectée dans le contexte LLM
+- [x] Opportunity score (1-10)
+- [x] Sources JSONB avec liens cliquables dans le dashboard
+- [x] Prompts rédactionnels (prose comparative 4-8 phrases au lieu de data dumps)
+- [x] Résumé structured data (détection schemas multiples)
+- [x] Dashboard : regroupement par mot-clé, comparaison A/B, mobile responsive
+- [x] Script de génération d'analyses Claude (`generate-claude-analyses.ts`)
+- [x] Référentiel Lacoste : 335 pages indexées (170 FR, 165 US)
+
+### Prochaines étapes
+1. **Edge Functions deployment** — Deploy `trigger-run` and `manage-keywords` to Supabase so dashboard buttons work end-to-end
+2. **Full keyword activation** — Expand from 7 to 42+ keywords once pipeline is stable
+3. **Movement analysis activation** — Once 2+ completed runs exist, enable `analyze-movement.ts` to track ranking changes over time
+4. **Adapter prompts pour ministral** — Format markdown au lieu de JSON pour les petits modèles (taux de succès JSON : ~40%)
+5. **Locales supplémentaires** — Ajouter GB, DE, ES, IT au sitemap et aux keywords
+6. **Visualisations tendances** — Charts de positions dans le temps (Recharts)
+7. **Backlink data integration** — Add off-site SEO factors (currently on-site only)

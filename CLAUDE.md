@@ -46,9 +46,11 @@ supabase/      → Migrations, RLS policies, Edge Functions
 npm run dev          # Start Vite dev server (localhost:5173)
 npm run build        # Build dashboard for production
 npm test             # Run vitest tests
-npx tsx pipeline/run.ts                # Run full pipeline locally
-npx tsx pipeline/claude-reanalyze.ts   # Duplicate a run's SERP + extract analysis contexts
-npx tsx pipeline/insert-claude-analyses.ts  # Insert programmatic analyses from contexts
+npx tsx pipeline/run.ts                        # Run full pipeline locally
+npx tsx pipeline/claude-reanalyze.ts           # Duplicate a run's SERP + extract analysis contexts
+npx tsx pipeline/insert-claude-analyses.ts     # Insert programmatic analyses from contexts (legacy)
+npx tsx pipeline/generate-claude-analyses.ts   # Generate Claude-quality analyses from contexts
+npx tsx pipeline/refresh-sitemap.ts            # Refresh Lacoste sitemap reference (lacoste_pages)
 ```
 
 ## Environment Variables
@@ -164,3 +166,22 @@ The dashboard parses these formats and renders them as collapsible sections with
 - **Gap analysis** processes keywords one at a time (batch_size=1) due to LLM context constraints with ministral-3:14b
 - **Classification quality** with ministral-3:14b is ~85% on actor_category — inconsistencies between desktop/mobile for same URL, some boutiques misclassified as brands
 - **Lacoste absent from top 50**: When Lacoste is not in the top 50 Google results, the deep dive analysis runs without Lacoste comparison (best practices only). The Lacoste reference system code is preserved but disconnected (in `pipeline/lib/lacoste-matcher.ts`, `pipeline/refresh-sitemap.ts`)
+- **Structured data summarization**: `summarizeStructuredData()` in `analyze-gap.ts` parses all JSON-LD schemas (@type, @graph, aggregateRating, offers, reviews) into a concise string instead of truncating raw JSON
+- **Ministral JSON failures**: With prose-length prompts (4-8 sentences per field), ministral-3:14b fails to produce valid JSON ~60% of the time. Use `generate-claude-analyses.ts` for high-quality analyses or adapt prompts for shorter output with small models
+
+## Dashboard Features
+
+- **Keyword grouping**: Analyses grouped by keyword in collapsible sections
+- **A/B Compare mode**: Select 2 runs to see analyses side-by-side with A/B badges
+- **Mobile responsive**: Hamburger sidebar, stacked filters, hidden tags on small screens
+- **Structured rendering**: Color-coded collapsible sections (Alignement intention, Couverture sémantique, Structure, Meta, Données structurées)
+- **Sources panel**: Collapsible list of analyzed URLs with position badges
+- **CitationText**: Auto-links actor names/domains in analysis text to source URLs
+
+## Lacoste Reference System
+
+Code preserved but disconnected from active pipeline:
+- `pipeline/refresh-sitemap.ts` — crawls Lacoste sitemaps (XML + Firecrawl fallback), populates `lacoste_pages` (335 pages: 170 FR, 165 US)
+- `pipeline/lib/lacoste-matcher.ts` — token-based + LLM keyword→page matching
+- Tables: `lacoste_pages`, `lacoste_snapshots` (migration 003)
+- To reconnect: import matcher in `analyze-gap.ts` and inject Lacoste page content when absent from SERP
