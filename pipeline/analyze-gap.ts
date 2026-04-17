@@ -4,6 +4,8 @@ import { callLLM } from './lib/llm.js';
 import { ANALYZE_GAP_SYSTEM, analyzeGapUserPrompt, DEEP_DIVE_SYSTEM, deepDiveUserPrompt } from './prompts/analyze-gap.js';
 import { jsonrepair } from 'jsonrepair';
 import { countKeywordOccurrences } from './lib/keyword-counter.js';
+import { countLinks } from './lib/link-counter.js';
+import { extractTop1Keywords } from './lib/top1-keywords.js';
 
 /** Summarize structured data schemas into a concise, LLM-friendly string with counts */
 function summarizeStructuredData(sd: unknown): string {
@@ -232,6 +234,8 @@ export async function analyzeGap(runId: string): Promise<void> {
               if (snapshot.markdown_content) {
                 const counts = countKeywordOccurrences(keyword, snapshot.markdown_content);
                 aggregatedContent += `KEYWORD DENSITY ("${keyword}"): ${counts.total} total, H1: ${counts.inH1}, H2: ${counts.inH2}, H3: ${counts.inH3}, H4: ${counts.inH4}, tous Hn: ${counts.inHeadings}\n`;
+                const links = countLinks(snapshot.markdown_content, result.domain);
+                aggregatedContent += `LIENS INTERNES: ${links.internalLinks} | LIENS EXTERNES: ${links.externalLinks}\n`;
               }
               aggregatedContent += `CONTENU MARKDOWN:\n${md}\n\n`;
             } else {
@@ -242,6 +246,35 @@ export async function analyzeGap(runId: string): Promise<void> {
           // If Lacoste absent from this SERP, note it (no reference injection)
           if (!lacostePosResult) {
             aggregatedContent += `--- LACOSTE : absente du Top 50 pour ce mot-clé ---\n\n`;
+          }
+        }
+
+        // Extract top-1 keyword suggestions for recommendations
+        const top1Result = batch[0]?.results.find((r: any) => r.position === 1);
+        const lacosteResult = batch[0]?.results.find((r: any) => r.is_lacoste);
+        if (top1Result) {
+          const { data: top1Snap } = await supabase
+            .from('snapshots')
+            .select('markdown_content')
+            .eq('run_id', runId)
+            .eq('url', top1Result.url)
+            .single();
+
+          const { data: lacSnap } = lacosteResult
+            ? await supabase.from('snapshots').select('markdown_content')
+                .eq('run_id', runId).eq('url', lacosteResult.url).single()
+            : { data: null };
+
+          if (top1Snap?.markdown_content) {
+            const keyword = batch[0]?.keyword.keyword;
+            const suggestions = extractTop1Keywords(
+              top1Snap.markdown_content,
+              lacSnap?.markdown_content || null,
+              keyword,
+            );
+            if (suggestions.length > 0) {
+              aggregatedContent += `\nMOTS-CLES SECONDAIRES (frequents chez Top 1, absents/rares chez Lacoste): ${suggestions.join(', ')}\n`;
+            }
           }
         }
 
@@ -441,6 +474,8 @@ export async function analyzeGap(runId: string): Promise<void> {
         if (snapshot.markdown_content) {
           const counts = countKeywordOccurrences(keyword, snapshot.markdown_content);
           deepContent += `KEYWORD DENSITY ("${keyword}"): ${counts.total} total, H1: ${counts.inH1}, H2: ${counts.inH2}, H3: ${counts.inH3}, H4: ${counts.inH4}, tous Hn: ${counts.inHeadings}\n`;
+          const links = countLinks(snapshot.markdown_content, result.domain);
+          deepContent += `LIENS INTERNES: ${links.internalLinks} | LIENS EXTERNES: ${links.externalLinks}\n`;
         }
         deepContent += `CONTENU MARKDOWN:\n${md}\n\n`;
       } else {
@@ -475,6 +510,8 @@ export async function analyzeGap(runId: string): Promise<void> {
         if (lacSnapshot.markdown_content) {
           const counts = countKeywordOccurrences(keyword, lacSnapshot.markdown_content);
           deepContent += `KEYWORD DENSITY ("${keyword}"): ${counts.total} total, H1: ${counts.inH1}, H2: ${counts.inH2}, H3: ${counts.inH3}, H4: ${counts.inH4}, tous Hn: ${counts.inHeadings}\n`;
+          const lacLinks = countLinks(lacSnapshot.markdown_content, lacResult.domain);
+          deepContent += `LIENS INTERNES: ${lacLinks.internalLinks} | LIENS EXTERNES: ${lacLinks.externalLinks}\n`;
         }
         deepContent += `CONTENU MARKDOWN:\n${md}\n\n`;
       }

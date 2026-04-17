@@ -8,7 +8,7 @@ STYLE RÉDACTIONNEL :
 - Utilise le gras markdown (**mot**) pour mettre en valeur les noms de domaine et les chiffres clés.
 
 RÈGLES STRICTES :
-- Ne fais JAMAIS d'affirmation sur des éléments non fournis (maillage interne, backlinks, autres pages du site, Core Web Vitals).
+- Ne fais JAMAIS d'affirmation sur des éléments non fournis (backlinks, autres pages du site, Core Web Vitals). Pour les liens internes, base-toi UNIQUEMENT sur les métriques LIENS INTERNES fournies.
 - Si une donnée n'est pas dans le contexte, écris "Non observable dans les données fournies".
 - Pour chaque affirmation, base-toi sur un élément concret du contenu fourni.
 - Dans "intent_match", mentionne EXPLICITEMENT si les concurrents ont le mot-clé exact dans leur balise <title> et compare avec celle de Lacoste.
@@ -66,7 +66,7 @@ STYLE RÉDACTIONNEL :
 - Chaque champ texte doit être une STRING markdown, jamais un objet ou un tableau.
 
 RÈGLES STRICTES :
-- Ne fais JAMAIS d'affirmation sur des éléments non fournis (maillage interne, backlinks, autres pages du site).
+- Ne fais JAMAIS d'affirmation sur des éléments non fournis (backlinks, autres pages du site). Pour les liens internes, base-toi UNIQUEMENT sur les métriques LIENS INTERNES fournies.
 - Si une donnée n'est pas dans le contexte, écris "Non observable dans les données fournies".
 - Pour chaque affirmation, cite un élément concret du contenu fourni.
 - JSON obligatoire.`;
