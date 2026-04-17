@@ -2,6 +2,9 @@ export interface KeywordCounts {
   total: number;
   inHeadings: number;
   inH1: number;
+  inH2: number;
+  inH3: number;
+  inH4: number;
 }
 
 export function countKeywordOccurrences(keyword: string, markdown: string): KeywordCounts {
@@ -10,13 +13,21 @@ export function countKeywordOccurrences(keyword: string, markdown: string): Keyw
 
   const total = (markdown.match(regex) || []).length;
 
-  const headingLines = markdown.split('\n').filter(line => /^#{1,6}\s/.test(line));
-  const headingText = headingLines.join('\n');
-  const inHeadings = (headingText.match(regex) || []).length;
+  const lines = markdown.split('\n');
+  const headingLines = lines.filter(line => /^#{1,6}\s/.test(line));
+  const inHeadings = (headingLines.join('\n').match(regex) || []).length;
 
-  const h1Lines = markdown.split('\n').filter(line => /^#\s/.test(line));
-  const h1Text = h1Lines.join('\n');
-  const inH1 = (h1Text.match(regex) || []).length;
+  const countForLevel = (prefix: RegExp): number => {
+    const matched = lines.filter(line => prefix.test(line));
+    return (matched.join('\n').match(regex) || []).length;
+  };
 
-  return { total, inHeadings, inH1 };
+  return {
+    total,
+    inHeadings,
+    inH1: countForLevel(/^#\s/),
+    inH2: countForLevel(/^##\s(?!#)/),
+    inH3: countForLevel(/^###\s(?!#)/),
+    inH4: countForLevel(/^####\s(?!#)/),
+  };
 }

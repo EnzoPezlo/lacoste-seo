@@ -219,7 +219,7 @@ export async function analyzeGap(runId: string): Promise<void> {
               // Inject keyword density metrics
               if (snapshot.markdown_content) {
                 const counts = countKeywordOccurrences(keyword, snapshot.markdown_content);
-                aggregatedContent += `KEYWORD DENSITY ("${keyword}"): ${counts.total} occurrences totales, ${counts.inHeadings} dans les Hn, ${counts.inH1} dans le H1\n`;
+                aggregatedContent += `KEYWORD DENSITY ("${keyword}"): ${counts.total} total, H1: ${counts.inH1}, H2: ${counts.inH2}, H3: ${counts.inH3}, H4: ${counts.inH4}, tous Hn: ${counts.inHeadings}\n`;
               }
               aggregatedContent += `CONTENU MARKDOWN:\n${md}\n\n`;
             } else {
@@ -428,7 +428,7 @@ export async function analyzeGap(runId: string): Promise<void> {
         }
         if (snapshot.markdown_content) {
           const counts = countKeywordOccurrences(keyword, snapshot.markdown_content);
-          deepContent += `KEYWORD DENSITY ("${keyword}"): ${counts.total} total, ${counts.inHeadings} Hn, ${counts.inH1} H1\n`;
+          deepContent += `KEYWORD DENSITY ("${keyword}"): ${counts.total} total, H1: ${counts.inH1}, H2: ${counts.inH2}, H3: ${counts.inH3}, H4: ${counts.inH4}, tous Hn: ${counts.inHeadings}\n`;
         }
         deepContent += `CONTENU MARKDOWN:\n${md}\n\n`;
       } else {
@@ -462,7 +462,7 @@ export async function analyzeGap(runId: string): Promise<void> {
         }
         if (lacSnapshot.markdown_content) {
           const counts = countKeywordOccurrences(keyword, lacSnapshot.markdown_content);
-          deepContent += `KEYWORD DENSITY ("${keyword}"): ${counts.total} total, ${counts.inHeadings} Hn, ${counts.inH1} H1\n`;
+          deepContent += `KEYWORD DENSITY ("${keyword}"): ${counts.total} total, H1: ${counts.inH1}, H2: ${counts.inH2}, H3: ${counts.inH3}, H4: ${counts.inH4}, tous Hn: ${counts.inHeadings}\n`;
         }
         deepContent += `CONTENU MARKDOWN:\n${md}\n\n`;
       }
