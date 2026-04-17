@@ -19,6 +19,16 @@ interface SerpResult {
   keywords: { keyword: string };
 }
 
+function formatRunLabel(label: string): string {
+  // Old format: "2026-03-26_manual_14h30" -> "26/03/2026 14h30 (manual)"
+  const oldMatch = label.match(/^(\d{4})-(\d{2})-(\d{2})_(\w+)_(\d{2}h\d{2})$/);
+  if (oldMatch) {
+    const [, y, m, d, type, time] = oldMatch;
+    return `${d}/${m}/${y} ${time} (${type})`;
+  }
+  return label;
+}
+
 function positionBadge(pos: number) {
   if (pos <= 3) return 'bg-emerald-50 text-emerald-700 font-bold';
   if (pos <= 10) return 'bg-sky-50 text-sky-700';
@@ -88,7 +98,7 @@ export function SerpPage() {
             >
               <option value="">Select a run</option>
               {runs.map((r) => (
-                <option key={r.id} value={r.id}>{r.run_label}</option>
+                <option key={r.id} value={r.id}>{formatRunLabel(r.run_label)}</option>
               ))}
             </select>
             <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" />

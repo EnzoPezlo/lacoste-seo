@@ -410,6 +410,16 @@ function MovementBadge({ analysis }: { analysis: Analysis }) {
   );
 }
 
+function formatRunLabel(label: string): string {
+  // Old format: "2026-03-26_manual_14h30" -> "26/03/2026 14h30 (manual)"
+  const oldMatch = label.match(/^(\d{4})-(\d{2})-(\d{2})_(\w+)_(\d{2}h\d{2})$/);
+  if (oldMatch) {
+    const [, y, m, d, type, time] = oldMatch;
+    return `${d}/${m}/${y} ${time} (${type})`;
+  }
+  return label;
+}
+
 export function AnalysesPage() {
   const [analyses, setAnalyses] = useState<Analysis[]>([]);
   const [runs, setRuns] = useState<Array<{ id: string; run_label: string }>>([]);
@@ -534,7 +544,7 @@ export function AnalysesPage() {
               >
                 <option value="">Select a run</option>
                 {runs.map((r) => (
-                  <option key={r.id} value={r.id}>{r.run_label}</option>
+                  <option key={r.id} value={r.id}>{formatRunLabel(r.run_label)}</option>
                 ))}
               </select>
               <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" />
@@ -557,7 +567,7 @@ export function AnalysesPage() {
                 >
                   <option value="">Run B...</option>
                   {runs.filter(r => r.id !== filters.run_id).map((r) => (
-                    <option key={r.id} value={r.id}>{r.run_label}</option>
+                    <option key={r.id} value={r.id}>{formatRunLabel(r.run_label)}</option>
                   ))}
                 </select>
                 <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" />

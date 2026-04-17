@@ -23,6 +23,16 @@ const statusConfig: Record<string, { label: string; color: string; border: strin
   failed: { label: 'Failed', color: 'bg-red-50 text-red-700', border: 'border-l-red-400', icon: AlertCircle },
 };
 
+function formatRunLabel(label: string): string {
+  // Old format: "2026-03-26_manual_14h30" -> "26/03/2026 14h30 (manual)"
+  const oldMatch = label.match(/^(\d{4})-(\d{2})-(\d{2})_(\w+)_(\d{2}h\d{2})$/);
+  if (oldMatch) {
+    const [, y, m, d, type, time] = oldMatch;
+    return `${d}/${m}/${y} ${time} (${type})`;
+  }
+  return label;
+}
+
 function formatDate(iso: string) {
   return new Date(iso).toLocaleString('fr-FR', {
     timeZone: 'Europe/Paris',
@@ -132,7 +142,7 @@ export function RunsPage() {
                 }`}
               >
                 <div className="flex items-center justify-between">
-                  <span className="font-semibold text-sm text-zinc-900">{run.run_label}</span>
+                  <span className="font-semibold text-sm text-zinc-900">{formatRunLabel(run.run_label)}</span>
                   <span className="text-xs text-zinc-400 uppercase">{run.type}</span>
                 </div>
                 <div className="flex items-center gap-1 mt-1">

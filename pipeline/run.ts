@@ -27,9 +27,13 @@ async function main(): Promise<void> {
   } else {
     // Create a new run
     const now = new Date();
-    const today = now.toISOString().slice(0, 10);
+    const day = now.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
     const time = now.toISOString().slice(11, 16).replace(':', 'h');
-    const runLabel = `${today}_${runType}_${time}`;
+    const { count: kwCount } = await supabase
+      .from('keywords')
+      .select('*', { count: 'exact', head: true })
+      .eq('active', true);
+    const runLabel = `${day} ${time} — ${kwCount || '?'} kw (${runType})`;
 
     console.log(`\n🚀 Starting SEO pipeline run: ${runLabel}\n`);
 
