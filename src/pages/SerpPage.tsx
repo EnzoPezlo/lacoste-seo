@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
-import { Search, Monitor, Smartphone, ChevronDown } from 'lucide-react';
+import { Search, ChevronDown } from 'lucide-react';
 
 interface SerpResult {
   id: string;
@@ -30,7 +30,7 @@ const countryFlags: Record<string, string> = { FR: '🇫🇷', US: '🇺🇸', G
 export function SerpPage() {
   const [results, setResults] = useState<SerpResult[]>([]);
   const [runs, setRuns] = useState<Array<{ id: string; run_label: string }>>([]);
-  const [filters, setFilters] = useState({ run_id: '', keyword: '', country: '', device: '' });
+  const [filters, setFilters] = useState({ run_id: '', keyword: '', country: '' });
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -49,13 +49,12 @@ export function SerpPage() {
       .order('position');
 
     if (filters.country) query = query.eq('country', filters.country);
-    if (filters.device) query = query.eq('device', filters.device);
 
     query.then(({ data }) => {
       setResults(data || []);
       setLoading(false);
     });
-  }, [filters.run_id, filters.country, filters.device]);
+  }, [filters.run_id, filters.country]);
 
   const filteredResults = useMemo(() => {
     if (!filters.keyword) return results;
@@ -115,32 +114,6 @@ export function SerpPage() {
               ))}
             </select>
             <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" />
-          </div>
-          <div className="flex items-center gap-1 bg-zinc-50 border border-zinc-200 rounded-lg p-1">
-            <button
-              onClick={() => setFilters({ ...filters, device: '' })}
-              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                !filters.device ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-700'
-              }`}
-            >
-              All
-            </button>
-            <button
-              onClick={() => setFilters({ ...filters, device: 'desktop' })}
-              className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                filters.device === 'desktop' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-700'
-              }`}
-            >
-              <Monitor size={12} /> Desktop
-            </button>
-            <button
-              onClick={() => setFilters({ ...filters, device: 'mobile' })}
-              className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                filters.device === 'mobile' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-700'
-              }`}
-            >
-              <Smartphone size={12} /> Mobile
-            </button>
           </div>
         </div>
       </div>

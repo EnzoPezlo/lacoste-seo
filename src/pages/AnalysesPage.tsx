@@ -413,7 +413,7 @@ function MovementBadge({ analysis }: { analysis: Analysis }) {
 export function AnalysesPage() {
   const [analyses, setAnalyses] = useState<Analysis[]>([]);
   const [runs, setRuns] = useState<Array<{ id: string; run_label: string }>>([]);
-  const [filters, setFilters] = useState({ run_id: '', type: '', keyword_id: '', device: '' });
+  const [filters, setFilters] = useState({ run_id: '', type: '', keyword_id: '' });
   const [keywords, setKeywords] = useState<Array<{ id: string; keyword: string }>>([]);
   const [expanded, setExpanded] = useState<string | null>(null);
 
@@ -452,7 +452,6 @@ export function AnalysesPage() {
 
     if (filters.type) query = query.eq('analysis_type', filters.type);
     if (filters.keyword_id) query = query.eq('keyword_id', filters.keyword_id);
-    if (filters.device) query = query.eq('device', filters.device);
 
     query.then(({ data }) => setAnalyses(data || []));
   }, [filters]);
@@ -468,10 +467,9 @@ export function AnalysesPage() {
 
     if (filters.type) query = query.eq('analysis_type', filters.type);
     if (filters.keyword_id) query = query.eq('keyword_id', filters.keyword_id);
-    if (filters.device) query = query.eq('device', filters.device);
 
     query.then(({ data }) => setCompareAnalyses(data || []));
-  }, [compareMode, compareRunId, filters.type, filters.keyword_id, filters.device]);
+  }, [compareMode, compareRunId, filters.type, filters.keyword_id]);
 
   const gapCount = analyses.filter((a) => a.analysis_type === 'lacoste_gap').length;
   const movementCount = analyses.filter((a) => a.analysis_type === 'position_movement').length;
@@ -619,42 +617,6 @@ export function AnalysesPage() {
                 ))}
               </select>
               <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" />
-            </div>
-
-            {/* Device filter */}
-            <div className="flex items-center gap-1 bg-zinc-50 border border-zinc-200 rounded-lg p-1">
-              <button
-                onClick={() => setFilters({ ...filters, device: '' })}
-                className={`px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                  !filters.device ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-700'
-                }`}
-              >
-                All
-              </button>
-              <button
-                onClick={() => setFilters({ ...filters, device: 'desktop' })}
-                className={`px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors hidden sm:block ${
-                  filters.device === 'desktop' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-700'
-                }`}
-              >
-                Desktop
-              </button>
-              <button
-                onClick={() => setFilters({ ...filters, device: 'desktop' })}
-                className={`px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors sm:hidden ${
-                  filters.device === 'desktop' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-700'
-                }`}
-              >
-                Desk
-              </button>
-              <button
-                onClick={() => setFilters({ ...filters, device: 'mobile' })}
-                className={`px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                  filters.device === 'mobile' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-700'
-                }`}
-              >
-                Mobile
-              </button>
             </div>
           </div>
         </div>
