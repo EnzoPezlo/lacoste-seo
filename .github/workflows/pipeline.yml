@@ -47,3 +47,6 @@ jobs:
           OLLAMA_MODEL: ${{ secrets.OLLAMA_MODEL }}
           LLM_FALLBACK_PROVIDER: ${{ vars.LLM_FALLBACK_PROVIDER }}
           LLM_FALLBACK_API_KEY: ${{ secrets.LLM_FALLBACK_API_KEY }}
+          LLM_FALLBACK_MODEL: ${{ vars.LLM_FALLBACK_MODEL }}
+          PROMPT_MODE: ${{ vars.PROMPT_MODE }}
+          OLLAMA_NUM_CTX: ${{ vars.OLLAMA_NUM_CTX }}
