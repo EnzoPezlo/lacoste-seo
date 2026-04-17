@@ -82,7 +82,7 @@ export async function collectSerp(runId: string): Promise<void> {
 
   for (const kw of keywords) {
     const countries: string[] = kw.countries;
-    const devices = ['desktop', 'mobile'];
+    const devices = ['mobile'];
 
     for (const country of countries) {
       for (const device of devices) {
