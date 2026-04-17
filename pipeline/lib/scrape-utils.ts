@@ -36,14 +36,20 @@ export async function firecrawlScrape(
   return data.data?.rawHtml || data.data?.html || '';
 }
 
-/** Extract JSON-LD structured data from HTML head */
-export function extractStructuredData(headHtml: string): unknown[] {
+/** Extract JSON-LD structured data from HTML (searches full document, deduplicates) */
+export function extractStructuredData(html: string): unknown[] {
   const ldJsonRegex = /<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
   const results: unknown[] = [];
+  const seen = new Set<string>();
   let match;
-  while ((match = ldJsonRegex.exec(headHtml)) !== null) {
+  while ((match = ldJsonRegex.exec(html)) !== null) {
     try {
-      results.push(JSON.parse(match[1]));
+      const parsed = JSON.parse(match[1]);
+      const key = JSON.stringify(parsed);
+      if (!seen.has(key)) {
+        seen.add(key);
+        results.push(parsed);
+      }
     } catch { /* skip malformed */ }
   }
   return results;

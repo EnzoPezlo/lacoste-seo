@@ -46,8 +46,8 @@ export async function scrape(runId: string): Promise<void> {
       const headMatch = fullHtml.match(/<head[^>]*>([\s\S]*?)<\/head>/i);
       const headHtml = headMatch ? headMatch[0] : fullHtml.slice(0, 5000);
 
-      // Extract structured data from head
-      const structuredData = extractStructuredData(headHtml);
+      // Extract structured data from full HTML (JSON-LD can be in head or body)
+      const structuredData = extractStructuredData(fullHtml);
 
       // Insert snapshot
       const { error: insertError } = await supabase.from('snapshots').insert({

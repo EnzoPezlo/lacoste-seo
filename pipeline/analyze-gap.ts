@@ -5,39 +5,51 @@ import { ANALYZE_GAP_SYSTEM, analyzeGapUserPrompt, DEEP_DIVE_SYSTEM, deepDiveUse
 import { jsonrepair } from 'jsonrepair';
 import { countKeywordOccurrences } from './lib/keyword-counter.js';
 
-/** Summarize structured data schemas into a concise, LLM-friendly string */
+/** Summarize structured data schemas into a concise, LLM-friendly string with counts */
 function summarizeStructuredData(sd: unknown): string {
-  if (!sd) return '';
+  if (!sd) return 'Aucune donnee structuree detectee';
   const schemas = Array.isArray(sd) ? sd : [sd];
-  const types: string[] = [];
+  if (schemas.length === 0) return 'Aucune donnee structuree detectee';
+
+  const typeCounts = new Map<string, number>();
+  const typeDetails = new Map<string, Set<string>>();
+
+  function processNode(node: Record<string, unknown>): void {
+    const type = String(node['@type'] || 'unknown');
+    typeCounts.set(type, (typeCounts.get(type) || 0) + 1);
+    if (!typeDetails.has(type)) typeDetails.set(type, new Set());
+    const details = typeDetails.get(type)!;
+    if (node.aggregateRating) details.add('ratings');
+    if (node.offers || node.hasOfferCatalog) details.add('offers');
+    if (node.review) details.add('reviews');
+    if (node.itemListElement) details.add(`${(node.itemListElement as unknown[]).length} items`);
+    if (node.mainEntity) details.add('mainEntity');
+  }
+
   for (const schema of schemas) {
     if (typeof schema !== 'object' || schema === null) continue;
     const s = schema as Record<string, unknown>;
-    const type = s['@type'] || (Array.isArray(s['@graph']) ? 'graph' : 'unknown');
-
     if (Array.isArray(s['@graph'])) {
-      // Expand @graph entries
       for (const node of s['@graph']) {
         if (typeof node === 'object' && node !== null) {
-          const n = node as Record<string, unknown>;
-          const nType = String(n['@type'] || 'unknown');
-          const details: string[] = [nType];
-          if (n.aggregateRating) details.push('with ratings');
-          if (n.offers || n.hasOfferCatalog) details.push('with offers');
-          if (n.review) details.push('with reviews');
-          types.push(details.join(' '));
+          processNode(node as Record<string, unknown>);
         }
       }
     } else {
-      const details: string[] = [String(type)];
-      if (s.aggregateRating) details.push('with ratings');
-      if (s.offers || s.hasOfferCatalog) details.push('with offers');
-      if (s.review) details.push('with reviews');
-      if (s.itemListElement) details.push(`(${(s.itemListElement as unknown[]).length} items)`);
-      types.push(details.join(' '));
+      processNode(s);
     }
   }
-  return types.length > 0 ? types.join(', ') : 'structured data present (format non reconnu)';
+
+  if (typeCounts.size === 0) return 'Aucune donnee structuree detectee';
+
+  const parts: string[] = [];
+  for (const [type, count] of typeCounts) {
+    const details = typeDetails.get(type)!;
+    let label = count > 1 ? `${type} x${count}` : type;
+    if (details.size > 0) label += ` (${[...details].join(', ')})`;
+    parts.push(label);
+  }
+  return parts.join(' | ');
 }
 
 const MAX_RETRIES = 3;
