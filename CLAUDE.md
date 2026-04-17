@@ -29,9 +29,12 @@ supabase/      → Migrations, RLS policies, Edge Functions
 - **Two-level analysis** in `analyze-gap.ts`:
   - **Global analysis** (`lacoste_gap`): top 20 overview with opportunity score
   - **Deep dive** (`top3_deep_dive`): detailed top 3 analysis. Compares with Lacoste only if present in top 50
-- `pipeline/lib/keyword-counter.ts` — counts keyword occurrences in text, headings, H1 (injected into LLM context)
+- `pipeline/lib/keyword-counter.ts` — counts keyword occurrences in text, H1, H2, H3, H4 (per-heading-level breakdown) (injected into LLM context)
+- `pipeline/lib/link-counter.ts` — counts internal vs external links in markdown content
+- `pipeline/lib/top1-keywords.ts` — extracts frequent keywords from top-1 competitor absent in Lacoste content
 - LLM abstraction in `pipeline/lib/llm.ts` — tries Ollama first, falls back to cloud
 - All prompts in `pipeline/prompts/` — French, JSON-only output, with strict guardrails (no hallucination on unobservable data)
+- Two prompt modes available via `PROMPT_MODE` env var: `ollama` (simplified, 5-8 bullets) and `claude` (enriched, 8-12 bullets with heading/link/structured-data analysis)
 - Logs every step to `run_logs` table (consumed by dashboard via Realtime)
 
 ### Database (Supabase)
@@ -68,6 +71,8 @@ npx tsx pipeline/refresh-sitemap.ts            # Refresh Lacoste sitemap referen
 - `OLLAMA_MODEL` — Model name (default: `ministral-3:14b`)
 - `LLM_FALLBACK_PROVIDER` — `openai` or `mistral` (stored as GitHub **variable**, not secret)
 - `LLM_FALLBACK_API_KEY`, `LLM_FALLBACK_MODEL` — Cloud LLM fallback
+- `PROMPT_MODE` — `ollama` (default) or `claude`. Selects simplified vs enriched prompt set
+- `OLLAMA_NUM_CTX` — Ollama context window size (default: `32768`)
 
 ### GitHub Secrets vs Variables
 - **Secrets** (`secrets.*`): all API keys, passwords, URLs containing credentials, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`
@@ -112,22 +117,24 @@ LLM responses (especially from small models like ministral-3:14b) often contain 
 
 ## Analysis Content Formats
 
+> **V3 format uses bullet points (5-8 per section for ollama, 8-12 for claude mode)** — fields contain bullet-point lists, not prose paragraphs.
+
 ### Global analysis (`lacoste_gap`)
 ```
 ### Alignement intention
-{text — must mention keyword presence in <title>}
+{bullet-point list — must mention keyword presence in <title>}
 
 ### Couverture sémantique
-{text — must reference KEYWORD DENSITY metrics}
+{bullet-point list — must reference KEYWORD DENSITY metrics}
 
 ### Structure
-{text}
+{bullet-point list}
 
 ### Optimisation meta
-{text}
+{bullet-point list}
 
 ### Données structurées
-{text}
+{bullet-point list}
 
 ## Recommandations
 1. {reco}
@@ -137,19 +144,19 @@ LLM responses (especially from small models like ministral-3:14b) often contain 
 ### Deep dive (`top3_deep_dive`)
 ```
 ### Analyse des titles
-{text — exact titles cited}
+{bullet-point list — exact titles cited}
 
 ### Profondeur de contenu
-{text — keyword counts, word counts}
+{bullet-point list — keyword counts, word counts}
 
 ### Structure
-{text}
+{bullet-point list}
 
 ### Données structurées
-{text}
+{bullet-point list}
 
 ### Optimisation meta
-{text}
+{bullet-point list}
 
 ## Points clés
 1. {takeaway}
@@ -162,12 +169,13 @@ The dashboard parses these formats and renders them as collapsible sections with
 
 - **Pipeline timeout**: GitHub Actions workflow has `timeout-minutes: 120`. Scraping 400+ URLs takes ~1h, so fresh runs need the full 2h. Resume runs skip SERP+scrape and finish in ~55min.
 - **Movement analysis** is disabled — requires multi-run history (code exists in `analyze-movement.ts`, commented out in `run.ts`)
-- **Device filtering** in SERP collection is not supported by Google CSE — desktop/mobile store identical results
-- **Gap analysis** processes keywords one at a time (batch_size=1) due to LLM context constraints with ministral-3:14b
+- **Mobile only**: SERP collection is restricted to mobile device (Google mobile-first indexing). Desktop collection was removed in V3.
+- **Gap analysis** processes keywords one at a time (batch_size=1) due to LLM context constraints with ministral-3:14b. Context window is now configurable via `OLLAMA_NUM_CTX` (default: 32768)
 - **Classification quality** with ministral-3:14b is ~85% on actor_category — inconsistencies between desktop/mobile for same URL, some boutiques misclassified as brands
 - **Lacoste absent from top 50**: When Lacoste is not in the top 50 Google results, the deep dive analysis runs without Lacoste comparison (best practices only). The Lacoste reference system code is preserved but disconnected (in `pipeline/lib/lacoste-matcher.ts`, `pipeline/refresh-sitemap.ts`)
-- **Structured data summarization**: `summarizeStructuredData()` in `analyze-gap.ts` parses all JSON-LD schemas (@type, @graph, aggregateRating, offers, reviews) into a concise string instead of truncating raw JSON
+- **Structured data summarization**: `summarizeStructuredData()` in `analyze-gap.ts` searches full HTML (not just `<head>`), deduplicates schemas by content, counts occurrences by `@type` (e.g., "Product x3 | BreadcrumbList"), and parses JSON-LD schemas (@type, @graph, aggregateRating, offers, reviews) into a concise string instead of truncating raw JSON
 - **Ministral JSON failures**: With prose-length prompts (4-8 sentences per field), ministral-3:14b fails to produce valid JSON ~60% of the time. Use `generate-claude-analyses.ts` for high-quality analyses or adapt prompts for shorter output with small models
+- **Prompt logging**: Full prompts (system + user) are logged to `pipeline/_prompt-logs/{runId}/` for debugging (gitignored)
 
 ## Dashboard Features
 
