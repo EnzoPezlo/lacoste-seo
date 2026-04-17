@@ -1,11 +1,49 @@
 import { supabase } from './lib/supabase.js';
 import { log } from './lib/logger.js';
 import { callLLM } from './lib/llm.js';
-import { ANALYZE_GAP_SYSTEM, analyzeGapUserPrompt, DEEP_DIVE_SYSTEM, deepDiveUserPrompt } from './prompts/analyze-gap.js';
+import { config } from './lib/config.js';
+import {
+  ANALYZE_GAP_SYSTEM as OLLAMA_GAP_SYSTEM,
+  analyzeGapUserPrompt as ollamaGapPrompt,
+  DEEP_DIVE_SYSTEM as OLLAMA_DEEP_SYSTEM,
+  deepDiveUserPrompt as ollamaDeepPrompt,
+} from './prompts/analyze-gap.js';
+import {
+  ANALYZE_GAP_SYSTEM_CLAUDE,
+  analyzeGapUserPromptClaude,
+  DEEP_DIVE_SYSTEM_CLAUDE,
+  deepDiveUserPromptClaude,
+} from './prompts/analyze-gap-claude.js';
 import { jsonrepair } from 'jsonrepair';
 import { countKeywordOccurrences } from './lib/keyword-counter.js';
 import { countLinks } from './lib/link-counter.js';
 import { extractTop1Keywords } from './lib/top1-keywords.js';
+import { writeFile, mkdir } from 'fs/promises';
+
+const isClaudeMode = config.llm.promptMode === 'claude';
+const GAP_SYSTEM = isClaudeMode ? ANALYZE_GAP_SYSTEM_CLAUDE : OLLAMA_GAP_SYSTEM;
+const gapUserPrompt = isClaudeMode ? analyzeGapUserPromptClaude : ollamaGapPrompt;
+const DEEP_SYSTEM = isClaudeMode ? DEEP_DIVE_SYSTEM_CLAUDE : OLLAMA_DEEP_SYSTEM;
+const deepUserPrompt = isClaudeMode ? deepDiveUserPromptClaude : ollamaDeepPrompt;
+
+async function logPrompt(
+  runId: string, keyword: string, type: string,
+  system: string, user: string,
+): Promise<void> {
+  const dir = `pipeline/_prompt-logs/${runId}`;
+  await mkdir(dir, { recursive: true });
+  const slug = keyword.replace(/[^a-zA-Z0-9-]/g, '-').slice(0, 30);
+  const content = [
+    `# ${type} — ${keyword}`,
+    `## Mode: ${config.llm.promptMode}`,
+    `## System Prompt`,
+    system,
+    '',
+    `## User Prompt`,
+    user,
+  ].join('\n');
+  await writeFile(`${dir}/${slug}_${type}.md`, content);
+}
 
 /** Summarize structured data schemas into a concise, LLM-friendly string with counts */
 function summarizeStructuredData(sd: unknown): string {
@@ -278,7 +316,10 @@ export async function analyzeGap(runId: string): Promise<void> {
           }
         }
 
-        const prompt = analyzeGapUserPrompt(aggregatedContent);
+        const keyword = batch[0]?.keyword.keyword;
+        const prompt = gapUserPrompt(aggregatedContent);
+
+        await logPrompt(runId, keyword, 'gap', GAP_SYSTEM, prompt);
 
         // Retry loop: LLM may produce invalid JSON, retry with fresh generation
         let analyses: GapAnalysisResult[] | null = null;
@@ -289,7 +330,7 @@ export async function analyzeGap(runId: string): Promise<void> {
             const response = await callLLM({
               task: 'analyze_gap',
               prompt,
-              systemPrompt: ANALYZE_GAP_SYSTEM,
+              systemPrompt: GAP_SYSTEM,
               temperature: 0.2 + (attempt - 1) * 0.1, // slightly increase temp on retries
               maxTokens: 8000,
             });
@@ -519,7 +560,10 @@ export async function analyzeGap(runId: string): Promise<void> {
 
     // Call LLM for deep dive
     try {
-      const prompt = deepDiveUserPrompt(deepContent, hasLacoste);
+      const prompt = deepUserPrompt(deepContent, hasLacoste);
+
+      await logPrompt(runId, keyword, 'deep_dive', DEEP_SYSTEM, prompt);
+
       let deepAnalyses: DeepDiveResult[] | null = null;
       let lastError = '';
 
@@ -528,7 +572,7 @@ export async function analyzeGap(runId: string): Promise<void> {
           const response = await callLLM({
             task: 'deep_dive_top3',
             prompt,
-            systemPrompt: DEEP_DIVE_SYSTEM,
+            systemPrompt: DEEP_SYSTEM,
             temperature: 0.2 + (attempt - 1) * 0.1,
             maxTokens: 4000,
           });

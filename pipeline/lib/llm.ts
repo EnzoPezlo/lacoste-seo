@@ -43,6 +43,7 @@ async function callOllama(options: CallLLMOptions): Promise<string> {
       options: {
         temperature: options.temperature ?? 0.1,
         num_predict: options.maxTokens ?? 4000,
+        num_ctx: config.llm.ollamaNumCtx,
       },
     }),
     signal: AbortSignal.timeout(300_000), // 5 min timeout
