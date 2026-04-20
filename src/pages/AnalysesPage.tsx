@@ -382,12 +382,15 @@ function MovementBadge({ analysis }: { analysis: Analysis }) {
   if (analysis.analysis_type !== 'position_movement') return null;
 
   const v = analysis.variation ?? 0;
-  if (analysis.position_before === null) {
+  if (analysis.position_before === null && analysis.position_after) {
     return (
       <span className="inline-flex items-center gap-1 text-xs bg-violet-50 text-violet-700 px-2 py-0.5 rounded-full font-medium">
         <ArrowUpRight size={12} /> New entry #{analysis.position_after}
       </span>
     );
+  }
+  if (analysis.position_before === null && !analysis.position_after) {
+    return null;
   }
   if (v > 0) {
     return (
@@ -737,7 +740,7 @@ export function AnalysesPage() {
                                 <span className="inline-flex items-center gap-1 text-xs bg-zinc-100 text-zinc-600 px-1.5 sm:px-2 py-0.5 rounded-full font-medium">
                                   {countryFlags[a.country] || a.country} {a.device}
                                 </span>
-                                {!isGap && a.actor && (
+                                {!isGap && a.actor && a.analysis_type !== 'position_movement' && (
                                   <span className="text-xs bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded-full font-medium">
                                     {a.actor}
                                   </span>
