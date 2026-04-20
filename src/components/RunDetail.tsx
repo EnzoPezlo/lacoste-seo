@@ -41,6 +41,7 @@ function formatTime(iso: string) {
 export function RunDetail({ runId }: { runId: string }) {
   const [logs, setLogs] = useState<RunLog[]>([]);
   const [expandedStep, setExpandedStep] = useState<string | null>(null);
+  const [keywords, setKeywords] = useState<string[]>([]);
 
   useEffect(() => {
     supabase
@@ -49,6 +50,19 @@ export function RunDetail({ runId }: { runId: string }) {
       .eq('run_id', runId)
       .order('created_at')
       .then(({ data }) => setLogs(data || []));
+
+    // Fetch keywords analyzed in this run
+    supabase
+      .from('serp_results')
+      .select('keyword_id, keywords!inner(keyword)')
+      .eq('run_id', runId)
+      .then(({ data }) => {
+        const unique = new Set<string>();
+        for (const r of data || []) {
+          unique.add((r as any).keywords.keyword);
+        }
+        setKeywords([...unique].sort());
+      });
 
     const channel = supabase
       .channel(`run-logs-${runId}`)
@@ -80,6 +94,19 @@ export function RunDetail({ runId }: { runId: string }) {
 
   return (
     <div className="bg-white rounded-xl border border-zinc-200 p-6">
+      {keywords.length > 0 && (
+        <div className="mb-5">
+          <span className="text-xs text-zinc-500 font-medium">Keywords</span>
+          <div className="flex flex-wrap gap-1.5 mt-1.5">
+            {keywords.map((kw) => (
+              <span key={kw} className="text-xs bg-zinc-100 text-zinc-700 px-2 py-0.5 rounded-full font-medium">
+                {kw}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
       <h2 className="text-lg font-semibold text-zinc-900 mb-6">Pipeline Progress</h2>
 
       {/* Vertical timeline */}

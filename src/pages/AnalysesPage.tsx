@@ -687,7 +687,7 @@ export function AnalysesPage() {
                         bestOpp >= 4 ? 'bg-amber-50 text-amber-700' :
                         'bg-red-50 text-red-600'
                       }`}>
-                        {bestOpp}/10
+                        Opportunité {bestOpp}/10
                       </span>
                     )}
                   </div>
