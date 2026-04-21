@@ -2,9 +2,11 @@ import { useEffect, useState, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { supabase } from '../lib/supabase';
 import { Target, TrendingUp, ChevronDown, ChevronRight, BarChart3, AlertTriangle, ArrowUpRight, ArrowDownRight, Minus, Crosshair, BookOpen, LayoutList, Type, Code2, Lightbulb, Search, GitCompare } from 'lucide-react';
+import { PositionChart } from '../components/PositionChart';
 
 interface Analysis {
   id: string;
+  keyword_id: string;
   analysis_type: string;
   actor: string | null;
   content: string;
@@ -495,10 +497,10 @@ export function AnalysesPage() {
     const allAnalyses = compareMode && compareRunId
       ? [...analyses, ...compareAnalyses]
       : analyses;
-    const groups = new Map<string, { keyword: string; analyses: Analysis[] }>();
+    const groups = new Map<string, { keyword: string; keyword_id: string; analyses: Analysis[] }>();
     for (const a of allAnalyses) {
       const kw = (a as any).keywords.keyword;
-      if (!groups.has(kw)) groups.set(kw, { keyword: kw, analyses: [] });
+      if (!groups.has(kw)) groups.set(kw, { keyword: kw, keyword_id: a.keyword_id, analyses: [] });
       groups.get(kw)!.analyses.push(a);
     }
     // Sort analyses within each group: by type, then by run, then by country/device
@@ -615,22 +617,27 @@ export function AnalysesPage() {
             </button>
           </div>
 
-          {/* Second row on mobile: keyword + device */}
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            {/* Keyword filter */}
-            <div className="relative flex-1 sm:flex-initial">
-              <select
-                value={filters.keyword_id}
-                onChange={(e) => setFilters({ ...filters, keyword_id: e.target.value })}
-                className="appearance-none w-full sm:w-auto bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-2 pr-8 text-sm font-medium text-zinc-700 hover:border-zinc-300 transition-colors"
+          {/* Keyword pills */}
+          <div className="flex items-center gap-1.5 flex-wrap w-full sm:w-auto">
+            <button
+              onClick={() => setFilters({ ...filters, keyword_id: '' })}
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                !filters.keyword_id ? 'bg-brand text-white shadow-sm' : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
+              }`}
+            >
+              Tous
+            </button>
+            {keywords.map((kw) => (
+              <button
+                key={kw.id}
+                onClick={() => setFilters({ ...filters, keyword_id: kw.id })}
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                  filters.keyword_id === kw.id ? 'bg-brand text-white shadow-sm' : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
+                }`}
               >
-                <option value="">All keywords</option>
-                {keywords.map((kw) => (
-                  <option key={kw.id} value={kw.id}>{kw.keyword}</option>
-                ))}
-              </select>
-              <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" />
-            </div>
+                {kw.keyword}
+              </button>
+            ))}
           </div>
         </div>
       </div>
@@ -696,9 +703,17 @@ export function AnalysesPage() {
                   </div>
                 </button>
 
-                {/* Analyses within this keyword */}
+                {/* Position evolution chart + Analyses within this keyword */}
                 {isGroupOpen && (
                   <div className="divide-y divide-zinc-100">
+                    {/* Position evolution chart */}
+                    <div className="px-3 sm:px-5 py-4 bg-white border-b border-zinc-100">
+                      <PositionChart
+                        keywordId={group.keyword_id}
+                        keyword={group.keyword}
+                        country={group.analyses[0]?.country}
+                      />
+                    </div>
                     {group.analyses.map((a) => {
                       const isGap = a.analysis_type === 'lacoste_gap';
                       const isDeepDive = a.analysis_type === 'top3_deep_dive';
