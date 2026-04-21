@@ -607,14 +607,16 @@ export function AnalysesPage() {
             >
               <TrendingUp size={12} /> Mvt ({movementCount})
             </button>
-            <button
-              onClick={() => setFilters({ ...filters, type: 'top3_deep_dive' })}
-              className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition-colors ${
-                filters.type === 'top3_deep_dive' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-700'
-              }`}
-            >
-              <Crosshair size={12} /> Deep ({deepDiveCount})
-            </button>
+            {deepDiveCount > 0 && (
+              <button
+                onClick={() => setFilters({ ...filters, type: 'top3_deep_dive' })}
+                className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition-colors ${
+                  filters.type === 'top3_deep_dive' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-700'
+                }`}
+              >
+                <Crosshair size={12} /> Deep ({deepDiveCount})
+              </button>
+            )}
           </div>
 
           {/* Keyword pills */}

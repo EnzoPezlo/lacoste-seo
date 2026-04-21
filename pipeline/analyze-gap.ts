@@ -3,17 +3,11 @@ import { log } from './lib/logger.js';
 import { callLLM } from './lib/llm.js';
 import { config } from './lib/config.js';
 import {
-  ANALYZE_GAP_SYSTEM as OLLAMA_GAP_SYSTEM,
-  analyzeGapUserPrompt as ollamaGapPrompt,
-  DEEP_DIVE_SYSTEM as OLLAMA_DEEP_SYSTEM,
-  deepDiveUserPrompt as ollamaDeepPrompt,
-} from './prompts/analyze-gap.js';
-import {
-  ANALYZE_GAP_SYSTEM_CLAUDE,
-  analyzeGapUserPromptClaude,
-  DEEP_DIVE_SYSTEM_CLAUDE,
-  deepDiveUserPromptClaude,
-} from './prompts/analyze-gap-claude.js';
+  CONSOLIDATED_SYSTEM,
+  consolidatedUserPrompt,
+  CONSOLIDATED_SYSTEM_CLAUDE,
+  consolidatedUserPromptClaude,
+} from './prompts/analyze-consolidated.js';
 import { jsonrepair } from 'jsonrepair';
 import { countKeywordOccurrences } from './lib/keyword-counter.js';
 import { countLinks } from './lib/link-counter.js';
@@ -21,10 +15,8 @@ import { extractTop1Keywords } from './lib/top1-keywords.js';
 import { writeFile, mkdir } from 'fs/promises';
 
 const isClaudeMode = config.llm.promptMode === 'claude';
-const GAP_SYSTEM = isClaudeMode ? ANALYZE_GAP_SYSTEM_CLAUDE : OLLAMA_GAP_SYSTEM;
-const gapUserPrompt = isClaudeMode ? analyzeGapUserPromptClaude : ollamaGapPrompt;
-const DEEP_SYSTEM = isClaudeMode ? DEEP_DIVE_SYSTEM_CLAUDE : OLLAMA_DEEP_SYSTEM;
-const deepUserPrompt = isClaudeMode ? deepDiveUserPromptClaude : ollamaDeepPrompt;
+const SYSTEM_PROMPT = isClaudeMode ? CONSOLIDATED_SYSTEM_CLAUDE : CONSOLIDATED_SYSTEM;
+const userPromptFn = isClaudeMode ? consolidatedUserPromptClaude : consolidatedUserPrompt;
 
 async function logPrompt(
   runId: string, keyword: string, type: string,
@@ -128,7 +120,7 @@ interface SourceRef {
 }
 
 
-interface GapAnalysisResult {
+interface ConsolidatedResult {
   keyword: string;
   country: string;
   device: string;
@@ -139,22 +131,11 @@ interface GapAnalysisResult {
   structure_gap: string;
   meta_gap: string;
   schema_gap: string;
+  top3_detail: string;
   recommendations: string[];
-  tags: string[];
-  opportunity_score: number;
-}
-
-interface DeepDiveResult {
-  keyword: string;
-  country: string;
-  device: string;
-  title_analysis: string;
-  content_depth_analysis: string;
-  structure_analysis: string;
-  structured_data_analysis: string;
-  meta_analysis: string;
   key_takeaways: string[];
   tags: string[];
+  opportunity_score: number;
 }
 
 export async function analyzeGap(runId: string): Promise<void> {
@@ -239,9 +220,12 @@ export async function analyzeGap(runId: string): Promise<void> {
           aggregatedContent += `\n=== MOT-CLÉ : ${keyword} | PAYS : ${country} | DEVICE : ${device} | LACOSTE : position ${lacostePos} ===\n\n`;
 
           // Get Top 10 + Lacoste page content from snapshots
+          // Top 3 get more content (2500 chars) for detailed analysis, rest get 1500
           const top10 = item.results.filter((r) => r.position <= 10 || r.is_lacoste);
+          const hasLacoste = !!item.results.find((r) => r.is_lacoste);
 
           for (const result of top10) {
+            const contentLimit = result.position <= 3 || result.is_lacoste ? 2500 : 1500;
             const { data: snapshot } = await supabase
               .from('snapshots')
               .select('markdown_content, head_html, structured_data')
@@ -263,7 +247,7 @@ export async function analyzeGap(runId: string): Promise<void> {
 
             aggregatedContent += `--- ${label} ---\n`;
             if (snapshot) {
-              const md = snapshot.markdown_content?.slice(0, 1500) || '(no content)';
+              const md = snapshot.markdown_content?.slice(0, contentLimit) || '(no content)';
               aggregatedContent += `META HEAD: ${snapshot.head_html?.slice(0, 300) || '(no head)'}\n`;
               if (snapshot.structured_data) {
                 aggregatedContent += `STRUCTURED DATA: ${summarizeStructuredData(snapshot.structured_data)}\n`;
@@ -317,25 +301,25 @@ export async function analyzeGap(runId: string): Promise<void> {
         }
 
         const keyword = batch[0]?.keyword.keyword;
-        const prompt = gapUserPrompt(aggregatedContent);
+        const prompt = userPromptFn(aggregatedContent, hasLacoste);
 
-        await logPrompt(runId, keyword, 'gap', GAP_SYSTEM, prompt);
+        await logPrompt(runId, keyword, 'consolidated', SYSTEM_PROMPT, prompt);
 
         // Retry loop: LLM may produce invalid JSON, retry with fresh generation
-        let analyses: GapAnalysisResult[] | null = null;
+        let analyses: ConsolidatedResult[] | null = null;
         let lastError = '';
 
         for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
           try {
             const response = await callLLM({
-              task: 'analyze_gap',
+              task: 'consolidated_analysis',
               prompt,
-              systemPrompt: GAP_SYSTEM,
-              temperature: 0.2 + (attempt - 1) * 0.1, // slightly increase temp on retries
-              maxTokens: 8000,
+              systemPrompt: SYSTEM_PROMPT,
+              temperature: 0.2 + (attempt - 1) * 0.1,
+              maxTokens: 12000,
             });
 
-            analyses = parseLLMJsonArray<GapAnalysisResult>(response);
+            analyses = parseLLMJsonArray<ConsolidatedResult>(response);
             break; // success
           } catch (parseError) {
             lastError = (parseError as Error).message;
@@ -403,8 +387,11 @@ export async function analyzeGap(runId: string): Promise<void> {
           const recoList = (Array.isArray(analysis.recommendations) ? analysis.recommendations : [])
             .map((r: unknown, idx: number) => `${idx + 1}. ${str(r)}`)
             .join('\n');
+          const takeaways = (Array.isArray(analysis.key_takeaways) ? analysis.key_takeaways : [])
+            .map((t: unknown, idx: number) => `${idx + 1}. ${str(t)}`)
+            .join('\n');
 
-          const content = `### Alignement intention\n${str(analysis.intent_match)}\n\n### Couverture sémantique\n${str(analysis.content_gap)}\n\n### Structure\n${str(analysis.structure_gap)}\n\n### Optimisation meta\n${str(analysis.meta_gap)}\n\n### Données structurées\n${str(analysis.schema_gap)}\n\n## Recommandations\n${recoList}`;
+          const content = `### Alignement intention\n${str(analysis.intent_match)}\n\n### Couverture sémantique\n${str(analysis.content_gap)}\n\n### Structure\n${str(analysis.structure_gap)}\n\n### Optimisation meta\n${str(analysis.meta_gap)}\n\n### Données structurées\n${str(analysis.schema_gap)}\n\n### Zoom Top 3\n${str(analysis.top3_detail)}\n\n## Recommandations\n${recoList}\n\n## Points clés\n${takeaways}`;
 
           // Use original SERP data for lacoste_position (LLM may return "absent" or wrong type)
           const lacostePosResult = matchingItem.results.find((r) => r.is_lacoste);
@@ -457,201 +444,6 @@ export async function analyzeGap(runId: string): Promise<void> {
       }
     }
   }
-
-  // === DEEP DIVE: Top 3 analysis ===
-  await log(runId, 'analyze_gap', 'running', 'Starting Top 3 deep dive analysis');
-
-  let deepDiveCount = 0;
-
-  for (const item of toAnalyze) {
-    const [keywordId, country, device] = item.key.split('|');
-    const keyword = item.keyword.keyword;
-
-    // Check if deep dive already done for this combo
-    const { data: existingDeep } = await supabase
-      .from('analyses')
-      .select('id')
-      .eq('run_id', runId)
-      .eq('keyword_id', keywordId)
-      .eq('country', country)
-      .eq('device', device)
-      .eq('analysis_type', 'top3_deep_dive')
-      .limit(1);
-
-    if (existingDeep && existingDeep.length > 0) continue;
-
-    // Determine if Lacoste is in the top 50
-    const lacostePosResult = item.results.find((r) => r.is_lacoste);
-    const hasLacoste = !!lacostePosResult;
-
-    // Build content for top 3 + optionally Lacoste (more content per page: 3000 chars)
-    let deepContent = `\n=== MOT-CLÉ : ${keyword} | PAYS : ${country} | DEVICE : ${device} ===\n\n`;
-    const top3 = item.results.filter((r) => r.position <= 3);
-    const deepSources: SourceRef[] = [];
-
-    for (const result of top3) {
-      const { data: snapshot } = await supabase
-        .from('snapshots')
-        .select('markdown_content, head_html, structured_data')
-        .eq('run_id', runId)
-        .eq('url', result.url)
-        .single();
-
-      const label = `Position ${result.position} : ${result.domain} (${result.url})`;
-      deepSources.push({
-        position: result.position,
-        domain: result.domain,
-        actor_name: result.actor_name || result.domain,
-        url: result.url,
-      });
-
-      deepContent += `--- ${label} ---\n`;
-      if (snapshot) {
-        const md = snapshot.markdown_content?.slice(0, 3000) || '(no content)';
-        deepContent += `META HEAD: ${snapshot.head_html?.slice(0, 500) || '(no head)'}\n`;
-        if (snapshot.structured_data) {
-          deepContent += `STRUCTURED DATA: ${summarizeStructuredData(snapshot.structured_data)}\n`;
-        }
-        if (snapshot.markdown_content) {
-          const counts = countKeywordOccurrences(keyword, snapshot.markdown_content);
-          deepContent += `KEYWORD DENSITY ("${keyword}"): ${counts.total} total, H1: ${counts.inH1}, H2: ${counts.inH2}, H3: ${counts.inH3}, H4: ${counts.inH4}, tous Hn: ${counts.inHeadings}\n`;
-          const links = countLinks(snapshot.markdown_content, result.domain);
-          deepContent += `LIENS INTERNES: ${links.internalLinks} | LIENS EXTERNES: ${links.externalLinks}\n`;
-        }
-        deepContent += `CONTENU MARKDOWN:\n${md}\n\n`;
-      } else {
-        deepContent += `(snapshot non disponible)\n\n`;
-      }
-    }
-
-    // Add Lacoste page if present in top 50
-    if (hasLacoste) {
-      const lacResult = lacostePosResult!;
-      const { data: lacSnapshot } = await supabase
-        .from('snapshots')
-        .select('markdown_content, head_html, structured_data')
-        .eq('run_id', runId)
-        .eq('url', lacResult.url)
-        .single();
-
-      deepSources.push({
-        position: lacResult.position,
-        domain: lacResult.domain,
-        actor_name: 'Lacoste',
-        url: lacResult.url,
-      });
-
-      deepContent += `--- LACOSTE (Position ${lacResult.position}) — ${lacResult.url} ---\n`;
-      if (lacSnapshot) {
-        const md = lacSnapshot.markdown_content?.slice(0, 3000) || '(no content)';
-        deepContent += `META HEAD: ${lacSnapshot.head_html?.slice(0, 500) || '(no head)'}\n`;
-        if (lacSnapshot.structured_data) {
-          deepContent += `STRUCTURED DATA: ${summarizeStructuredData(lacSnapshot.structured_data)}\n`;
-        }
-        if (lacSnapshot.markdown_content) {
-          const counts = countKeywordOccurrences(keyword, lacSnapshot.markdown_content);
-          deepContent += `KEYWORD DENSITY ("${keyword}"): ${counts.total} total, H1: ${counts.inH1}, H2: ${counts.inH2}, H3: ${counts.inH3}, H4: ${counts.inH4}, tous Hn: ${counts.inHeadings}\n`;
-          const lacLinks = countLinks(lacSnapshot.markdown_content, lacResult.domain);
-          deepContent += `LIENS INTERNES: ${lacLinks.internalLinks} | LIENS EXTERNES: ${lacLinks.externalLinks}\n`;
-        }
-        deepContent += `CONTENU MARKDOWN:\n${md}\n\n`;
-      }
-    }
-
-    // Call LLM for deep dive
-    try {
-      const prompt = deepUserPrompt(deepContent, hasLacoste);
-
-      await logPrompt(runId, keyword, 'deep_dive', DEEP_SYSTEM, prompt);
-
-      let deepAnalyses: DeepDiveResult[] | null = null;
-      let lastError = '';
-
-      for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-        try {
-          const response = await callLLM({
-            task: 'deep_dive_top3',
-            prompt,
-            systemPrompt: DEEP_SYSTEM,
-            temperature: 0.2 + (attempt - 1) * 0.1,
-            maxTokens: 4000,
-          });
-          deepAnalyses = parseLLMJsonArray<DeepDiveResult>(response);
-          break;
-        } catch (parseError) {
-          lastError = (parseError as Error).message;
-          if (attempt < MAX_RETRIES) continue;
-        }
-      }
-
-      if (!deepAnalyses) {
-        console.error(`[deep_dive] All retries failed for "${keyword}"`);
-        continue;
-      }
-
-      for (const analysis of deepAnalyses) {
-        const str = (v: unknown): string => {
-          if (typeof v === 'string') return v;
-          if (Array.isArray(v)) {
-            return v.map((item) => {
-              if (typeof item === 'string') return `- ${item}`;
-              if (typeof item === 'object' && item) {
-                const o = item as Record<string, unknown>;
-                const site = o.site || o.domain || o.actor_name || '';
-                const fields = Object.entries(o)
-                  .filter(([k]) => !['site', 'domain', 'actor_name'].includes(k))
-                  .map(([, val]) => typeof val === 'string' ? val : '')
-                  .filter(Boolean);
-                return `- **${site}** : ${fields.join(' — ')}`;
-              }
-              return `- ${String(item)}`;
-            }).join('\n');
-          }
-          if (typeof v === 'object' && v) {
-            const o = v as Record<string, unknown>;
-            return Object.entries(o)
-              .map(([key, val]) => {
-                if (Array.isArray(val)) return `**${key}** :\n${str(val)}`;
-                return `**${key}** : ${typeof val === 'string' ? val : String(val ?? '')}`;
-              })
-              .join('\n');
-          }
-          return String(v ?? '');
-        };
-
-        const takeaways = (Array.isArray(analysis.key_takeaways) ? analysis.key_takeaways : [])
-          .map((t: unknown, idx: number) => `${idx + 1}. ${str(t)}`)
-          .join('\n');
-
-        const content = `### Analyse des titles\n${str(analysis.title_analysis)}\n\n### Profondeur de contenu\n${str(analysis.content_depth_analysis)}\n\n### Structure\n${str(analysis.structure_analysis)}\n\n### Données structurées\n${str(analysis.structured_data_analysis)}\n\n### Optimisation meta\n${str(analysis.meta_analysis)}\n\n## Points clés\n${takeaways}`;
-
-        const tags = Array.isArray(analysis.tags)
-          ? analysis.tags.filter((t: unknown) => typeof t === 'string') : [];
-
-        const { error: insertError } = await supabase.from('analyses').insert({
-          run_id: runId,
-          keyword_id: keywordId,
-          country,
-          device,
-          analysis_type: 'top3_deep_dive',
-          content,
-          tags,
-          lacoste_position: lacostePosResult?.position ?? null,
-          sources: deepSources,
-        });
-
-        if (insertError) {
-          console.error(`[deep_dive] Insert failed for "${keyword}":`, insertError.message);
-          continue;
-        }
-        deepDiveCount++;
-      }
-    } catch (error) {
-      console.error(`[deep_dive] Error for "${keyword}":`, (error as Error).message);
-    }
-  }
-
-  await log(runId, 'analyze_gap', 'running', `Deep dive complete: ${deepDiveCount} analyses`);
 
   await log(
     runId,
