@@ -4,7 +4,7 @@
 
 Competitive SEO intelligence platform for Lacoste. Collects SERP data, scrapes competitor pages, classifies actors via LLM, and generates gap analyses — all surfaced through a real-time dashboard.
 
-**Stack**: React 19 + Vite + Tailwind v4 | Supabase (Postgres + Edge Functions + Realtime) | GitHub Actions | Ollama/OpenAI LLM
+**Stack**: React 19 + Vite + Tailwind v4 + Recharts | Supabase (Postgres + Edge Functions + Realtime) | GitHub Actions | Ollama Gemma 4 31B (primary) / Claude Opus (manual)
 
 ## Architecture
 
@@ -25,16 +25,19 @@ supabase/      → Migrations, RLS policies, Edge Functions
 ### Pipeline (`pipeline/`)
 - Entry point: `pipeline/run.ts` — orchestrates 5 sequential steps
 - Each step is a standalone module: `collect-serp.ts`, `scrape.ts`, `classify.ts`, `analyze-gap.ts`, `analyze-movement.ts`
-- **SERP collection** fetches 50 results (5 pages of 10). Analysis runs on top 20, deep dive on top 3
-- **Two-level analysis** in `analyze-gap.ts`:
-  - **Global analysis** (`lacoste_gap`): top 20 overview with opportunity score
-  - **Deep dive** (`top3_deep_dive`): detailed top 3 analysis. Compares with Lacoste only if present in top 50
+- **SERP collection** fetches 50 results (5 pages of 10)
+- **Consolidated analysis** in `analyze-gap.ts`: single analysis per keyword merging gap + deep dive
+  - Scope: top 10 results + Lacoste (if in top 50). Top 3 get 2500 chars content, positions 4-10 get 1500
+  - Sections: intent_match, content_gap, structure_gap, meta_gap, schema_gap, top3_detail, recommendations, key_takeaways
+  - Opportunity score 1-10 (10 = highest opportunity to gain positions)
+  - Stored as `analysis_type='lacoste_gap'` in the `analyses` table
 - `pipeline/lib/keyword-counter.ts` — counts keyword occurrences in text, H1, H2, H3, H4 (per-heading-level breakdown) (injected into LLM context)
 - `pipeline/lib/link-counter.ts` — counts internal vs external links in markdown content
 - `pipeline/lib/top1-keywords.ts` — extracts frequent keywords from top-1 competitor absent in Lacoste content
 - LLM abstraction in `pipeline/lib/llm.ts` — tries Ollama first, falls back to cloud
 - All prompts in `pipeline/prompts/` — French, JSON-only output, with strict guardrails (no hallucination on unobservable data)
-- Two prompt modes available via `PROMPT_MODE` env var: `ollama` (simplified, 5-8 bullets) and `claude` (enriched, 8-12 bullets with heading/link/structured-data analysis)
+- Consolidated prompt in `pipeline/prompts/analyze-consolidated.ts` — two modes via `PROMPT_MODE` env var: `ollama` (5-8 bullets per section, for Gemma 4 31B) and `claude` (8-12 bullets, for Claude Opus)
+- Legacy prompt files preserved: `analyze-gap.ts` (old split prompts), `analyze-gap-claude.ts` (old Claude deep dive)
 - Logs every step to `run_logs` table (consumed by dashboard via Realtime)
 
 ### Database (Supabase)
@@ -49,10 +52,10 @@ supabase/      → Migrations, RLS policies, Edge Functions
 npm run dev          # Start Vite dev server (localhost:5173)
 npm run build        # Build dashboard for production
 npm test             # Run vitest tests
-npx tsx pipeline/run.ts                        # Run full pipeline locally
-npx tsx pipeline/claude-reanalyze.ts           # Duplicate a run's SERP + extract analysis contexts
-npx tsx pipeline/insert-claude-analyses.ts     # Insert programmatic analyses from contexts (legacy)
-npx tsx pipeline/generate-claude-analyses.ts   # Generate Claude-quality analyses from contexts
+npx tsx pipeline/run.ts                        # Run full pipeline locally (serp → scrape → classify → analyze)
+npx tsx pipeline/claude-full-analysis.ts       # Classify SERP + extract analysis contexts from a run
+npx tsx pipeline/insert-consolidated-analyses.ts  # Insert Claude Opus consolidated analyses
+npx tsx pipeline/insert-movement-analyses.ts   # Insert movement analyses (cross-run comparison)
 npx tsx pipeline/refresh-sitemap.ts            # Refresh Lacoste sitemap reference (lacoste_pages)
 ```
 
@@ -68,7 +71,7 @@ npx tsx pipeline/refresh-sitemap.ts            # Refresh Lacoste sitemap referen
 - `FIRECRAWL_KEY` — Firecrawl scraping API
 - `OLLAMA_URL` — Ollama base URL (no trailing path! e.g. `https://ollama.example.com`)
 - `OLLAMA_USER`, `OLLAMA_PASSWORD` — Optional basic auth for Ollama
-- `OLLAMA_MODEL` — Model name (default: `ministral-3:14b`)
+- `OLLAMA_MODEL` — Model name (default: `gemma4:31b`)
 - `LLM_FALLBACK_PROVIDER` — `openai` or `mistral` (stored as GitHub **variable**, not secret)
 - `LLM_FALLBACK_API_KEY`, `LLM_FALLBACK_MODEL` — Cloud LLM fallback
 - `PROMPT_MODE` — `ollama` (default) or `claude`. Selects simplified vs enriched prompt set
@@ -96,7 +99,7 @@ Or via GitHub Actions: set the `resume_run_id` input field when triggering manua
 
 Resume is fully idempotent — the pipeline auto-detects completed steps:
 - **Classification**: skipped if `serp_results.actor_name` already populated
-- **Gap analysis**: skips keyword/country/device combos that already have an `analyses` row (both `lacoste_gap` and `top3_deep_dive`)
+- **Gap analysis**: skips keyword/country/device combos that already have a `lacoste_gap` row in `analyses`
 
 ## Conventions
 
@@ -115,74 +118,70 @@ LLM responses (especially from small models like ministral-3:14b) often contain 
 - Type coercion via `str()` helper — never trust LLM field types (may return objects instead of strings)
 - `lacoste_position` is sourced from SERP data, NOT from LLM output (LLM may return "absent" as string)
 
-## Analysis Content Formats
+## Analysis Content Format
 
-> **V3 format uses bullet points (5-8 per section for ollama, 8-12 for claude mode)** — fields contain bullet-point lists, not prose paragraphs.
+> **V4 consolidated format** — single analysis per keyword merging gap + deep dive. Bullet points (5-8 for gemma, 8-12 for claude mode).
 
-### Global analysis (`lacoste_gap`)
+### Consolidated analysis (`lacoste_gap`)
 ```
 ### Alignement intention
-{bullet-point list — must mention keyword presence in <title>}
+{bullet-point list — keyword presence in <title>, H1, search intent}
 
 ### Couverture sémantique
-{bullet-point list — must reference KEYWORD DENSITY metrics}
+{bullet-point list — KEYWORD DENSITY metrics per Hn level, links}
 
 ### Structure
-{bullet-point list}
+{bullet-point list — H1/H2-H4 hierarchy, navigation, filters}
 
 ### Optimisation meta
-{bullet-point list}
+{bullet-point list — title exact, meta description, CTR}
 
 ### Données structurées
-{bullet-point list}
+{bullet-point list — Product, BreadcrumbList, AggregateRating}
+
+### Zoom Top 3
+{bullet-point list — detailed comparison of top 3 results}
 
 ## Recommandations
-1. {reco}
-2. {reco}
-```
-
-### Deep dive (`top3_deep_dive`)
-```
-### Analyse des titles
-{bullet-point list — exact titles cited}
-
-### Profondeur de contenu
-{bullet-point list — keyword counts, word counts}
-
-### Structure
-{bullet-point list}
-
-### Données structurées
-{bullet-point list}
-
-### Optimisation meta
-{bullet-point list}
+1. {reco — ordered by impact, quick wins first}
 
 ## Points clés
-1. {takeaway}
-2. {takeaway}
+1. {key takeaway with data}
 ```
 
-The dashboard parses these formats and renders them as collapsible sections with color-coded icons. Deep dive cards have a violet left border.
+### Movement analysis (`position_movement`)
+- One per keyword/country combo, comparing current run vs previous run
+- Sections: movement description, objective SERP changes, SEO hypotheses
+- Fields: `actor`, `movement_type`, `position_before`, `position_after`
+
+The dashboard parses these formats and renders them as collapsible sections with color-coded icons.
+
+### Run naming convention
+Format: `dd/MM/yy - X kw - llm_name` (e.g., "17/04/26 - 7 kw - claude opus")
+- Runs page strips the LLM suffix for cleaner display
+- Analyses page dropdown shows the full label including LLM name
 
 ## Known Limitations
 
 - **Pipeline timeout**: GitHub Actions workflow has `timeout-minutes: 120`. Scraping 400+ URLs takes ~1h, so fresh runs need the full 2h. Resume runs skip SERP+scrape and finish in ~55min.
-- **Movement analysis** is disabled — requires multi-run history (code exists in `analyze-movement.ts`, commented out in `run.ts`)
+- **Movement analysis** compares SERP positions across runs. First analysis done manually (Claude Opus) for 23/03→17/04 comparison. Pipeline code in `analyze-movement.ts` (auto-detection of previous run)
 - **Mobile only**: SERP collection is restricted to mobile device (Google mobile-first indexing). Desktop collection was removed in V3.
-- **Gap analysis** processes keywords one at a time (batch_size=1) due to LLM context constraints with ministral-3:14b. Context window is now configurable via `OLLAMA_NUM_CTX` (default: 32768)
-- **Classification quality** with ministral-3:14b is ~85% on actor_category — inconsistencies between desktop/mobile for same URL, some boutiques misclassified as brands
-- **Lacoste absent from top 50**: When Lacoste is not in the top 50 Google results, the deep dive analysis runs without Lacoste comparison (best practices only). The Lacoste reference system code is preserved but disconnected (in `pipeline/lib/lacoste-matcher.ts`, `pipeline/refresh-sitemap.ts`)
+- **Gap analysis** processes keywords one at a time (batch_size=1). Context window configurable via `OLLAMA_NUM_CTX` (default: 32768). Gemma 4 31B handles the consolidated prompt well
+- **Lacoste absent from top 50**: When Lacoste is not in the top 50, analysis runs without Lacoste comparison (best practices only). The reference system code is preserved but disconnected (`pipeline/lib/lacoste-matcher.ts`, `pipeline/refresh-sitemap.ts`)
 - **Structured data summarization**: `summarizeStructuredData()` in `analyze-gap.ts` searches full HTML (not just `<head>`), deduplicates schemas by content, counts occurrences by `@type` (e.g., "Product x3 | BreadcrumbList"), and parses JSON-LD schemas (@type, @graph, aggregateRating, offers, reviews) into a concise string instead of truncating raw JSON
-- **Ministral JSON failures**: With prose-length prompts (4-8 sentences per field), ministral-3:14b fails to produce valid JSON ~60% of the time. Use `generate-claude-analyses.ts` for high-quality analyses or adapt prompts for shorter output with small models
+- **LLM JSON reliability**: Gemma 4 31B is more reliable than ministral-3:14b for JSON output. Claude Opus can also generate analyses directly (see `insert-consolidated-analyses.ts`)
 - **Prompt logging**: Full prompts (system + user) are logged to `pipeline/_prompt-logs/{runId}/` for debugging (gitignored)
 
 ## Dashboard Features
 
 - **Keyword grouping**: Analyses grouped by keyword in collapsible sections
+- **Keyword pill filters**: Clickable keyword buttons (brand-colored when active) to filter analyses
+- **Position evolution chart**: Recharts line chart per keyword showing position evolution across runs. Y-axis inverted (1 at top), Lacoste highlighted in brand green with thicker line. Component: `src/components/PositionChart.tsx`
+- **Run detail with keywords**: RunDetail panel shows keyword tags above pipeline progress. Component: `src/components/RunDetail.tsx`
+- **Opportunity score**: Displayed as "Opportunité X/10" badge on keyword headers (10 = highest opportunity)
 - **A/B Compare mode**: Select 2 runs to see analyses side-by-side with A/B badges
 - **Mobile responsive**: Hamburger sidebar, stacked filters, hidden tags on small screens
-- **Structured rendering**: Color-coded collapsible sections (Alignement intention, Couverture sémantique, Structure, Meta, Données structurées)
+- **Structured rendering**: Color-coded collapsible sections (Alignement intention, Couverture sémantique, Structure, Meta, Données structurées, Zoom Top 3)
 - **Sources panel**: Collapsible list of analyzed URLs with position badges
 - **CitationText**: Auto-links actor names/domains in analysis text to source URLs
 
